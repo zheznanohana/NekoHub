@@ -155,16 +155,6 @@ pyinstaller --noconsole --onefile --icon=icon.ico --name=NekoHub ui_app.py
 
 ## 📄 许可证
 
-本项目基于 [GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.google.com/search?q=LICENSE) 开源。**核心限制：** 任何人修改本代码或将本代码作为服务端/SaaS 提供网络服务，都**必须**开源其所有修改后的源代码，严禁闭源商业化白嫖。
+本项目基于 [GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.google.com/search?q=LICENSE) 开源。
 
-```
 
-***
-
-**最后一步护城河提示：**
-既然选了 AGPL-3.0，为了在法律层面上完全生效，你需要在 GitHub 网页上给你的仓库添加一个正式的 LICENSE 文件。
-操作很简单：在 GitHub 仓库主页，点击 **"Add file" -> "Create new file"**，文件名输入 `LICENSE`。右侧会自动弹出一个 **"Choose a license template"** 的按钮，点进去搜索并选择 **"GNU Affero General Public License v3.0"**，然后直接提交保存就可以了！
-
-接下来就可以开开心心把代码 `push` 上去了！Would you like me to help double-check your `.gitignore` file before you push?
-
-```
