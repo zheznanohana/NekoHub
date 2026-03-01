@@ -1,137 +1,90 @@
 # ui_ai.py
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTextEdit
-from qfluentwidgets import (CardWidget, PushButton, LineEdit, 
-                            TitleLabel, SubtitleLabel, BodyLabel, ComboBox, SpinBox)
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
+from qfluentwidgets import (CardWidget, PushButton, LineEdit, TextEdit, TitleLabel, 
+                            SubtitleLabel, BodyLabel, SpinBox, InfoBar, InfoBarPosition)
+from PySide6.QtCore import Qt
 
 class AiPage(QWidget):
-    def __init__(self, ai_manager, get_settings_cb, save_settings_cb):
+    def __init__(self, ai_manager, get_settings, save_settings):
         super().__init__()
-        self.setObjectName("ai_page")
-        self.ai_manager = ai_manager
-        self.get_settings = get_settings_cb
-        self.save_settings = save_settings_cb
+        self.setObjectName("ai_chat_page") 
+        self.ai_manager, self.get_settings, self.save_settings = ai_manager, get_settings, save_settings
         
-        self.ai_manager.chat_response_ready.connect(self._on_chat_response)
+        # 获取语言设置
+        s = self.get_settings()
+        self.lang = getattr(s, "language", "简体中文")
+        is_en = self.lang == "English"
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(24, 18, 24, 18)
-        root.setSpacing(12)
-        root.addWidget(TitleLabel("AI 助手与摘要配置"))
+        self.ai_manager.chat_response_ready.connect(self._on_reply)
 
-        # ---- AI 配置卡片 ----
-        config_card = CardWidget()
-        config_card.setBorderRadius(12)
-        c_lay = QVBoxLayout(config_card)
-        c_lay.setContentsMargins(16, 14, 16, 14)
-        
-        self.ed_api = LineEdit()
-        self.ed_api.setPlaceholderText("API Key (支持 OpenAI 格式)")
-        self.ed_url = LineEdit()
-        self.ed_url.setPlaceholderText("Base URL (如 https://api.openai.com/v1)")
+        root = QVBoxLayout(self); root.setContentsMargins(24, 18, 24, 18)
+        root.addWidget(TitleLabel("AI Assistant" if is_en else "AI 助手对话"))
+
+        # 1. 接口配置区
+        config = CardWidget(); c_lay = QVBoxLayout(config)
+        self.ed_url = LineEdit(); self.ed_api = LineEdit(); self.ed_api.setEchoMode(LineEdit.Password)
         self.ed_model = LineEdit()
-        self.ed_model.setPlaceholderText("模型名称 (如 gpt-3.5-turbo)")
         
-        self.cb_mode = ComboBox()
-        self.cb_mode.addItems(["按条数触发", "按时间触发"])
-        self.sp_count = SpinBox()
-        self.sp_count.setRange(1, 1000)
-        self.ed_time = LineEdit()
-        self.ed_time.setPlaceholderText("每天触发时间 (如 08:00,18:00)")
+        c_lay.addWidget(SubtitleLabel("API Configuration" if is_en else "模型接口全局配置"))
+        self.ed_url.setPlaceholderText("API Base URL")
+        self.ed_api.setPlaceholderText("API Key")
+        self.ed_model.setPlaceholderText("Model Name (e.g. deepseek-chat)")
+        c_lay.addWidget(self.ed_url); c_lay.addWidget(self.ed_api); c_lay.addWidget(self.ed_model)
+        
+        row_limit = QHBoxLayout()
+        row_limit.addWidget(BodyLabel("Context Limit (Messages):" if is_en else "助手对话参考最近通知条数:"))
+        self.sp_limit = SpinBox(); self.sp_limit.setRange(1, 1000)
+        row_limit.addWidget(self.sp_limit); row_limit.addStretch(1)
+        c_lay.addLayout(row_limit)
+        
+        self.btn_save = PushButton("Save Configuration" if is_en else "保存并应用配置")
+        self.btn_save.clicked.connect(self._save_config); c_lay.addWidget(self.btn_save)
+        root.addWidget(config)
 
-        c_lay.addWidget(SubtitleLabel("API 接口配置"))
-        c_lay.addWidget(self.ed_url)
-        c_lay.addWidget(self.ed_api)
-        c_lay.addWidget(self.ed_model)
+        # 2. 对话展示区 (使用 TextEdit 获得漂亮滚动条)
+        chat = CardWidget(); chat_lay = QVBoxLayout(chat)
+        chat_lay.addWidget(SubtitleLabel("Live Chat" if is_en else "上下文实时对话"))
+        self.history = TextEdit(); self.history.setReadOnly(True)
+        self.history.setStyleSheet("background:transparent; border:none; font-family: 'Segoe UI', 'Microsoft YaHei';")
+        chat_lay.addWidget(self.history)
         
-        c_lay.addWidget(SubtitleLabel("自动摘要规则"))
-        r1 = QHBoxLayout()
-        r1.addWidget(BodyLabel("触发模式:"))
-        r1.addWidget(self.cb_mode)
-        r1.addWidget(BodyLabel("条数阈值:"))
-        r1.addWidget(self.sp_count)
-        r1.addWidget(BodyLabel("触发时间(逗号分隔):"))
-        r1.addWidget(self.ed_time)
-        c_lay.addLayout(r1)
-        
-        # --- 新增了手动按钮并放在同一排 ---
-        self.btn_save = PushButton("保存 AI 配置")
-        self.btn_save.clicked.connect(self._on_save)
-        
-        self.btn_manual = PushButton("手动生成并发送摘要")
-        self.btn_manual.clicked.connect(self._on_manual)
-        
-        btn_lay = QHBoxLayout()
-        btn_lay.addWidget(self.btn_save)
-        btn_lay.addWidget(self.btn_manual)
-        btn_lay.addStretch(1)
-        
-        c_lay.addLayout(btn_lay)
-        # --------------------------------
-        
-        root.addWidget(config_card, 0)
-
-        # ---- 聊天对话区域 ----
-        chat_card = CardWidget()
-        chat_card.setBorderRadius(12)
-        chat_lay = QVBoxLayout(chat_card)
-        chat_lay.addWidget(SubtitleLabel("与 AI 讨论通知记录"))
-        
-        self.chat_history = QTextEdit()
-        self.chat_history.setReadOnly(True)
-        self.chat_history.setStyleSheet("background-color: transparent; border: none; font-size: 14px;")
-        chat_lay.addWidget(self.chat_history, 1)
-        
+        # 3. 输入区
         input_lay = QHBoxLayout()
-        self.chat_input = LineEdit()
-        self.chat_input.setPlaceholderText("在此输入你想问 AI 的问题...")
-        self.chat_input.returnPressed.connect(self._on_send)
-        self.btn_send = PushButton("发送")
-        self.btn_send.clicked.connect(self._on_send)
-        
-        input_lay.addWidget(self.chat_input, 1)
-        input_lay.addWidget(self.btn_send, 0)
-        chat_lay.addLayout(input_lay)
-        
-        root.addWidget(chat_card, 1)
+        self.input = LineEdit()
+        self.input.setPlaceholderText("Type your question here..." if is_en else "在这里输入您的问题...")
+        self.input.returnPressed.connect(self._send)
+        self.btn_send = PushButton("Send" if is_en else "发送")
+        self.btn_send.clicked.connect(self._send)
+        input_lay.addWidget(self.input, 1); input_lay.addWidget(self.btn_send, 0)
+        chat_lay.addLayout(input_lay); root.addWidget(chat, 1)
+
         self._load_config()
 
     def _load_config(self):
         s = self.get_settings()
-        self.ed_api.setText(s.ai_api_key)
-        self.ed_url.setText(s.ai_base_url)
-        self.ed_model.setText(s.ai_model)
-        self.cb_mode.setCurrentIndex(0 if s.ai_summary_mode == "count" else 1)
-        self.sp_count.setValue(s.ai_summary_count)
-        self.ed_time.setText(s.ai_summary_times)
+        self.ed_url.setText(s.ai_base_url); self.ed_api.setText(s.ai_api_key); self.ed_model.setText(s.ai_model)
+        self.sp_limit.setValue(getattr(s, "ai_chat_context_limit", 50))
 
-    def _on_save(self):
+    def _save_config(self):
         s = self.get_settings()
-        s.ai_api_key = self.ed_api.text().strip()
-        s.ai_base_url = self.ed_url.text().strip()
-        s.ai_model = self.ed_model.text().strip()
-        s.ai_summary_mode = "count" if self.cb_mode.currentIndex() == 0 else "time"
-        s.ai_summary_count = self.sp_count.value()
-        s.ai_summary_times = self.ed_time.text().strip()
-        self.save_settings(s)
-        self.ai_manager.update_settings(s)
-        self.chat_history.append("<i>[系统] AI 配置已保存。</i><br>")
-        self.chat_history.verticalScrollBar().setValue(self.chat_history.verticalScrollBar().maximum())
+        s.ai_base_url, s.ai_api_key, s.ai_model = self.ed_url.text().strip(), self.ed_api.text().strip(), self.ed_model.text().strip()
+        s.ai_chat_context_limit = self.sp_limit.value()
+        self.save_settings(s); self.ai_manager.update_settings(s)
+        is_en = self.lang == "English"
+        InfoBar.success("Success" if is_en else "保存成功", "API config updated" if is_en else "API 配置已更新", parent=self)
 
-    # --- 这里是手动触发按钮的事件 ---
-    def _on_manual(self):
-        self.chat_history.append("<i>[系统] 已触发手动摘要，正在后台生成并发送至 Gotify...</i><br>")
-        self.chat_history.verticalScrollBar().setValue(self.chat_history.verticalScrollBar().maximum())
-        self.ai_manager.trigger_summary_async("手动触发摘要：")
-    # -----------------------------
+    def _send(self):
+        text = self.input.text().strip()
+        if text:
+            is_en = self.lang == "English"
+            self.history.moveCursor(self.history.textCursor().End)
+            self.history.insertHtml(f"<br><b style='color:#0078d4;'>{'User' if is_en else '问'}:</b> {text}<br>")
+            self.input.clear(); self.ai_manager.send_chat_async(text)
 
-    def _on_send(self):
-        text = self.chat_input.text().strip()
-        if not text: return
-        self.chat_history.append(f'<span style="color: #0068B5;"><b>You:</b> {text}</span>')
-        self.chat_input.clear()
-        self.chat_history.append("<i>AI 正在思考中...</i>")
-        self.ai_manager.send_chat_async(text)
-
-    def _on_chat_response(self, reply: str):
-        self.chat_history.append(f'<span style="color: #2D2D2D;"><b>AI:</b> {reply}</span><br>')
-        self.chat_history.verticalScrollBar().setValue(self.chat_history.verticalScrollBar().maximum())
+    def _on_reply(self, text):
+        is_en = self.lang == "English"
+        self.history.moveCursor(self.history.textCursor().End)
+        self.history.insertHtml(f"<b style='color:#107c10;'>{'AI' if is_en else '答'}:</b><br>")
+        self.history.insertMarkdown(text)
+        self.history.insertHtml("<br>")
+        self.history.verticalScrollBar().setValue(self.history.verticalScrollBar().maximum())

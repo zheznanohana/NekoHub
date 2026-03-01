@@ -1,0 +1,473 @@
+# ui_app.py
+from __future__ import annotations
+
+import sys
+import threading
+from dataclasses import asdict
+from typing import List, Tuple, Optional
+
+from PySide6.QtCore import Qt, QTimer, QObject, Signal, Slot
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QMessageBox,
+    QLineEdit,
+    QSpinBox,
+    QStyle,
+    QScrollArea,
+    QSystemTrayIcon,
+    QMenu,
+)
+
+from qfluentwidgets import (
+    FluentWindow,
+    NavigationItemPosition,
+    FluentIcon,
+    TitleLabel,
+    SubtitleLabel,
+    BodyLabel,
+    CardWidget,
+    PushButton,
+    LineEdit,
+    setTheme,
+    Theme,
+    SwitchButton,
+    ComboBox,
+    InfoBar,
+    InfoBarPosition
+)
+
+# 导入自定义模块
+from settings import Settings, load_settings, save_settings
+from notify_fx import SoundPlayer, ToastQueue
+from ai_core import AiManager
+from ui_ai import AiPage
+from ui_tasks import AiTasksPage
+
+# --- 数据库存储逻辑 ---
+try:
+    from storage import init_db, upsert_messages, latest_messages, get_meta, set_meta
+except Exception:
+    init_db = lambda: None
+    _MEM_DB: List[Tuple[int, int, str, str, int, str]] = []
+    _META = {"last_id": "0"}
+
+    def upsert_messages(msgs: List[dict]):
+        for m in msgs:
+            mid = int(m.get("id", 0))
+            appid = int(m.get("appid", 0))
+            title = str(m.get("title") or "Gotify")
+            msg = str(m.get("message") or "")
+            prio = int(m.get("priority", 0))
+            date = str(m.get("date") or "")
+            if any(r[0] == mid for r in _MEM_DB): continue
+            _MEM_DB.append((mid, appid, title, msg, prio, date))
+        _MEM_DB.sort(key=lambda x: x[0], reverse=True)
+
+    def latest_messages(limit: int):
+        return _MEM_DB[: max(0, int(limit))]
+
+    def get_meta(k: str): return _META.get(k)
+    def set_meta(k: str, v: str): _META[k] = v
+
+# --- Gotify 通信逻辑 ---
+try:
+    from gotify_client import fetch_latest, send_message
+except Exception:
+    fetch_latest = None
+    send_message = None
+
+try:
+    from gotify_ws import GotifyWSReceiver
+except Exception:
+    GotifyWSReceiver = None
+
+# ---------------------------
+# 刷新合并器（优化性能）
+# ---------------------------
+class UiRefreshCoalescer:
+    def __init__(self, fn, interval_ms: int = 200):
+        self._fn = fn
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._fn)
+        self._interval = max(50, int(interval_ms))
+
+    def request(self):
+        if not self._timer.isActive():
+            self._timer.start(self._interval)
+
+# ---------------------------
+# 系统托盘控制
+# ---------------------------
+class TrayController:
+    def __init__(self, window: QWidget, title: str = "NekoHub", icon: Optional[QIcon] = None):
+        self.window = window
+        self.tray = QSystemTrayIcon(window)
+        self.tray.setToolTip(title)
+
+        if icon and not icon.isNull():
+            self.tray.setIcon(icon)
+        else:
+            self.tray.setIcon(QApplication.style().standardIcon(QStyle.SP_ComputerIcon))
+
+        menu = QMenu()
+        act_show = menu.addAction("显示主界面")
+        act_exit = menu.addAction("退出程序")
+        act_show.triggered.connect(self.restore)
+        act_exit.triggered.connect(self.exit_app)
+        self.tray.setContextMenu(menu)
+
+        self.tray.activated.connect(self._on_tray_activated)
+        self.tray.show()
+
+    def _on_tray_activated(self, reason):
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self.restore()
+
+    def restore(self):
+        self.window.showNormal()
+        self.window.raise_()
+        self.window.activateWindow()
+
+    def exit_app(self):
+        QApplication.quit()
+
+# ---------------------------
+# 收件箱页面 (支持 Markdown)
+# ---------------------------
+class InboxPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("inbox_page")
+        self._limit = 100  
+        self._unread = 0
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 18, 24, 18)
+        root.setSpacing(10)
+
+        top = QHBoxLayout()
+        self.lbl_title = TitleLabel("收件箱 (Inbox)")
+        top.addWidget(self.lbl_title, 0)
+
+        self.lbl_unread = BodyLabel("")
+        self.lbl_unread.setStyleSheet("color:#ff3b30; font-weight:700; padding-left:6px;")
+        self.lbl_unread.hide()
+        top.addWidget(self.lbl_unread, 0)
+
+        top.addStretch(1)
+
+        self.btn_mark = PushButton("标为已读")
+        self.btn_mark.clicked.connect(self.clear_unread)
+        top.addWidget(self.btn_mark, 0)
+        root.addLayout(top)
+
+        self.lbl_status = BodyLabel("WS: 准备中")
+        self.lbl_status.setStyleSheet("opacity:0.75;")
+        root.addWidget(self.lbl_status)
+
+        self.lbl_hint = BodyLabel("等待新消息...")
+        self.lbl_hint.setStyleSheet("opacity:0.75;")
+        root.addWidget(self.lbl_hint)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.setStyleSheet("background:transparent; border:none;")
+
+        self.container = QWidget()
+        self.v = QVBoxLayout(self.container)
+        self.v.setSpacing(10)
+        self.v.setContentsMargins(0, 0, 0, 10)
+        self.v.setAlignment(Qt.AlignTop)
+        self.scroll.setWidget(self.container)
+        root.addWidget(self.scroll, 1)
+
+        self._cards: List[CardWidget] = []
+
+    def set_status(self, s: str): self.lbl_status.setText(s)
+    def set_hint(self, s: str): self.lbl_hint.setText(s)
+    
+    # --- 修复 AttributeError 的核心方法 ---
+    def limit(self) -> int:
+        return self._limit
+
+    def add_unread(self, n: int = 1):
+        self._unread += n
+        self._sync_unread()
+
+    def clear_unread(self):
+        self._unread = 0
+        self._sync_unread()
+
+    def _sync_unread(self):
+        if self._unread <= 0: self.lbl_unread.hide()
+        else:
+            self.lbl_unread.setText(f"● {self._unread}")
+            self.lbl_unread.show()
+
+    def _make_card(self, row: Tuple) -> CardWidget:
+        mid, appid, title, msg, prio, date = row
+        card = CardWidget()
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(14, 12, 14, 12)
+
+        head = QHBoxLayout()
+        head.addWidget(SubtitleLabel(str(title) if title else "Gotify"), 0)
+        head.addStretch(1)
+        meta = BodyLabel(f"#{mid}")
+        meta.setStyleSheet("opacity:0.5; font-size:10px;")
+        head.addWidget(meta)
+        lay.addLayout(head)
+
+        body = BodyLabel(str(msg) if msg else "")
+        body.setWordWrap(True)
+        # --- 渲染 Markdown，解决 DeepSeek 格式问题 ---
+        body.setTextFormat(Qt.MarkdownText) 
+        lay.addWidget(body)
+
+        if date:
+            dt = BodyLabel(str(date))
+            dt.setStyleSheet("opacity:0.4; font-size:9px;")
+            lay.addWidget(dt)
+        return card
+
+    def refresh_full(self, rows: List[Tuple]):
+        while self.v.count():
+            item = self.v.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+        self._cards.clear()
+        if not rows:
+            self.set_hint("暂无历史消息。")
+            return
+        self.set_hint(f"显示最近 {len(rows)} 条通知。")
+        for r in rows:
+            card = self._make_card(r)
+            self.v.addWidget(card)
+            self._cards.append(card)
+
+    def insert_top(self, row: Tuple):
+        card = self._make_card(row)
+        self.v.insertWidget(0, card)
+        self._cards.insert(0, card)
+        if len(self._cards) > self._limit:
+            last = self._cards.pop()
+            last.deleteLater()
+
+# ---------------------------
+# 设置页面 (支持驻留时长)
+# ---------------------------
+class SettingsPage(QWidget):
+    def __init__(self, get_cb, save_cb, test_send_cb, reconnect_cb):
+        super().__init__()
+        self.setObjectName("settings_page")
+        self._get, self._save = get_cb, save_cb
+        self._test_send, self._reconnect = test_send_cb, reconnect_cb
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 18, 24, 18)
+        root.setSpacing(12)
+        root.addWidget(TitleLabel("系统设置"))
+
+        card = CardWidget()
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(16, 14, 16, 14)
+
+        def row(label: str, w: QWidget):
+            r = QHBoxLayout()
+            r.addWidget(BodyLabel(label), 0)
+            r.addWidget(w, 1)
+            return r
+
+        lay.addWidget(SubtitleLabel("Gotify 核心配置"))
+        self.ed_url = LineEdit()
+        self.ed_recv = LineEdit()
+        self.ed_recv.setEchoMode(QLineEdit.Password)
+        self.ed_send = LineEdit()
+        self.ed_send.setEchoMode(QLineEdit.Password)
+        lay.addLayout(row("Gotify 地址:", self.ed_url))
+        lay.addLayout(row("接收 Token:", self.ed_recv))
+        lay.addLayout(row("发送 Token:", self.ed_send))
+
+        lay.addWidget(SubtitleLabel("通知效果"))
+        self.sp_toast = QSpinBox()
+        self.sp_toast.setRange(500, 30000)
+        self.sp_toast.setSingleStep(500)
+        self.sp_toast.setSuffix(" ms")
+        
+        self.sw_sound = SwitchButton("开启提示音")
+        lay.addLayout(row("通知驻留时长:", self.sp_toast))
+        lay.addWidget(self.sw_sound)
+
+        btns = QHBoxLayout()
+        self.btn_save = PushButton("保存并应用")
+        self.btn_save.clicked.connect(self._on_save)
+        self.btn_test = PushButton("发送测试推送")
+        self.btn_test.clicked.connect(self._on_test)
+        btns.addWidget(self.btn_save); btns.addWidget(self.btn_test)
+        btns.addStretch(1)
+        lay.addLayout(btns)
+        root.addWidget(card)
+        root.addStretch(1)
+        self.load_to_ui()
+
+    def load_to_ui(self):
+        s = self._get()
+        self.ed_url.setText(s.gotify_url)
+        self.ed_recv.setText(s.gotify_recv_token)
+        self.ed_send.setText(s.gotify_send_token)
+        self.sp_toast.setValue(int(getattr(s, "toast_duration", 3300)))
+        self.sw_sound.setChecked(bool(getattr(s, "sound_enabled", True)))
+
+    def _on_save(self):
+        s = self._get()
+        s.gotify_url = self.ed_url.text().strip()
+        s.gotify_recv_token = self.ed_recv.text().strip()
+        s.gotify_send_token = self.ed_send.text().strip()
+        s.toast_duration = int(self.sp_toast.value())
+        s.sound_enabled = self.sw_sound.isChecked()
+        self._save(s)
+        InfoBar.success("保存成功", "配置已固化到 settings.json", duration=2000, parent=self)
+
+    def _on_test(self):
+        ok, err = self._test_send(self._get())
+        if ok: InfoBar.success("测试成功", "消息已发出，请检查客户端", parent=self)
+        else: InfoBar.error("测试失败", err, parent=self)
+
+# ---------------------------
+# 主窗口桥接逻辑
+# ---------------------------
+class UiBridge(QObject):
+    status = Signal(str)
+    message = Signal(dict)
+    refresh_request = Signal()
+
+class NekoHubWindow(FluentWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("NekoHub")
+        self.resize(1100, 720)
+        self.setMinimumSize(980, 620)
+
+        icon = QIcon("icon.ico")
+        if icon.isNull(): icon = QApplication.style().standardIcon(QStyle.SP_ComputerIcon)
+        self.setWindowIcon(icon)
+
+        init_db()
+        self._settings = load_settings()
+        self._last_id = int(get_meta("last_id") or "0")
+
+        # 1. 初始化 AI 核心
+        self.ai_manager = AiManager(self._settings)
+
+        # 2. 页面实例化
+        self.inbox = InboxPage()
+        self.ai_chat_page = AiPage(self.ai_manager, self.get_settings, self.save_settings)
+        self.ai_tasks_page = AiTasksPage(self.ai_manager, self.get_settings, self.save_settings)
+        self.settings_page = SettingsPage(self.get_settings, self.save_settings, self.send_test, self.reconnect_ws)
+
+        # 3. 侧边栏并列挂载
+        self.addSubInterface(self.inbox, FluentIcon.MAIL, "收件箱")
+        self.addSubInterface(self.ai_chat_page, FluentIcon.CHAT, "AI 对话")
+        self.addSubInterface(self.ai_tasks_page, FluentIcon.CALENDAR, "自动化任务")
+        self.addSubInterface(self.settings_page, FluentIcon.SETTING, "系统设置", NavigationItemPosition.BOTTOM)
+
+        # 4. 通知组件
+        self.tray = TrayController(self, title="NekoHub", icon=icon)
+        self.sound = SoundPlayer()
+        # 使用动态时长
+        self.toast_q = ToastQueue(max_visible=6, life_ms=self._settings.toast_duration)
+
+        # 5. UI 桥接
+        self._refresh_coalescer = UiRefreshCoalescer(self._refresh_full_once, 200)
+        self._bridge = UiBridge()
+        self._bridge.status.connect(self.inbox.set_status)
+        self._bridge.message.connect(self._ui_handle_message)
+        self._bridge.refresh_request.connect(lambda: self._refresh_coalescer.request())
+
+        self._ws = None
+        self._refresh_full_once()
+        self._initial_history_fetch_async()
+        self._start_ws()
+
+    def get_settings(self) -> Settings: return self._settings
+    def save_settings(self, s: Settings):
+        self._settings = s
+        save_settings(s)
+        self.ai_manager.update_settings(s)
+        self.toast_q.life_ms = s.toast_duration # 实时同步弹窗时长
+        self._start_ws()
+
+    def reconnect_ws(self): self._start_ws()
+
+    def send_test(self, s: Settings):
+        try:
+            if not s.gotify_url: return False, "配置不全"
+            send_message(s.gotify_url, s.gotify_send_token, "NekoHub", "收到测试消息！")
+            return True, ""
+        except Exception as e: return False, str(e)
+
+    def _refresh_full_once(self):
+        # 此处曾导致 AttributeError，已通过添加 InboxPage.limit() 修复
+        rows = latest_messages(self.inbox.limit())
+        self.inbox.refresh_full(rows)
+
+    @Slot(dict)
+    def _ui_handle_message(self, m: dict):
+        upsert_messages([m])
+        mid = int(m.get("id", 0))
+        if mid > self._last_id:
+            self._last_id = mid
+            set_meta("last_id", str(mid))
+            self.ai_manager.on_new_message(m) # 触发 AI 任务
+            self.sound.play()
+            self.toast_q.show(str(m.get("title") or "Gotify"), str(m.get("message") or ""))
+            self.inbox.add_unread(1)
+            rows = latest_messages(1)
+            if rows: self.inbox.insert_top(rows[0])
+
+    def _initial_history_fetch_async(self):
+        def _work():
+            s = self._settings
+            if not s.gotify_url or not s.gotify_recv_token: return
+            try:
+                msgs = fetch_latest(s.gotify_url, s.gotify_recv_token, limit=50)
+                if msgs:
+                    upsert_messages(msgs)
+                    mx = max([int(x.get("id", 0)) for x in msgs] + [self._last_id])
+                    self._last_id = mx
+                    set_meta("last_id", str(mx))
+                self._bridge.refresh_request.emit()
+            except: pass
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _start_ws(self):
+        """关键字传参修复 strip() 报错"""
+        if self._ws: self._ws.stop()
+        s = self._settings
+        if not s.gotify_url or not s.gotify_recv_token:
+            self.inbox.set_status("WS: 等待配置")
+            return
+        
+        self._ws = GotifyWSReceiver(
+            base_url=s.gotify_url,
+            recv_token=s.gotify_recv_token, 
+            on_message=lambda mm: self._bridge.message.emit(mm),
+            on_status=lambda ss: self._bridge.status.emit(ss)
+        )
+        self._ws.start()
+
+def main():
+    app = QApplication(sys.argv)
+    setTheme(Theme.LIGHT)
+    w = NekoHubWindow()
+    w.show()
+    sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
