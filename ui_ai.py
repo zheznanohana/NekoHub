@@ -15,6 +15,9 @@ class AiPage(QWidget):
         self.lang = getattr(s, "language", "简体中文")
         is_en = self.lang == "English"
 
+        self.chat_log = "" 
+        self.thinking_mark = "" # 用于记录“思考中”的占位符
+
         self.ai_manager.chat_response_ready.connect(self._on_reply)
 
         root = QVBoxLayout(self); root.setContentsMargins(24, 18, 24, 18)
@@ -28,7 +31,7 @@ class AiPage(QWidget):
         c_lay.addWidget(SubtitleLabel("API Configuration" if is_en else "模型接口全局配置"))
         self.ed_url.setPlaceholderText("API Base URL")
         self.ed_api.setPlaceholderText("API Key")
-        self.ed_model.setPlaceholderText("Model Name (e.g. deepseek-chat)")
+        self.ed_model.setPlaceholderText("Model Name (e.g. qwen-plus)")
         c_lay.addWidget(self.ed_url); c_lay.addWidget(self.ed_api); c_lay.addWidget(self.ed_model)
         
         row_limit = QHBoxLayout()
@@ -41,7 +44,7 @@ class AiPage(QWidget):
         self.btn_save.clicked.connect(self._save_config); c_lay.addWidget(self.btn_save)
         root.addWidget(config)
 
-        # 2. 对话展示区 (使用 TextEdit 获得漂亮滚动条)
+        # 2. 对话展示区
         chat = CardWidget(); chat_lay = QVBoxLayout(chat)
         chat_lay.addWidget(SubtitleLabel("Live Chat" if is_en else "上下文实时对话"))
         self.history = TextEdit(); self.history.setReadOnly(True)
@@ -77,14 +80,42 @@ class AiPage(QWidget):
         text = self.input.text().strip()
         if text:
             is_en = self.lang == "English"
-            self.history.moveCursor(self.history.textCursor().End)
-            self.history.insertHtml(f"<br><b style='color:#0078d4;'>{'User' if is_en else '问'}:</b> {text}<br>")
-            self.input.clear(); self.ai_manager.send_chat_async(text)
+            user_label = "User" if is_en else "问"
+            
+            # 1. 记录用户的提问
+            self.chat_log += f"**{user_label}**：{text}\n\n"
+            
+            # 2. 插入“思考中”占位符
+            self.thinking_mark = f"*{'AI is thinking...' if is_en else 'AI 正在思考中...'}*\n\n"
+            self.chat_log += self.thinking_mark
+            
+            self.history.setMarkdown(self.chat_log)
+            self.history.verticalScrollBar().setValue(self.history.verticalScrollBar().maximum())
+            
+            # 3. 锁定 UI 并清空输入框
+            self.input.clear()
+            self.input.setEnabled(False)
+            self.btn_send.setEnabled(False)
+            self.btn_send.setText("Wait..." if is_en else "稍等...")
+            
+            # 4. 发送网络请求
+            self.ai_manager.send_chat_async(text)
 
     def _on_reply(self, text):
         is_en = self.lang == "English"
-        self.history.moveCursor(self.history.textCursor().End)
-        self.history.insertHtml(f"<b style='color:#107c10;'>{'AI' if is_en else '答'}:</b><br>")
-        self.history.insertMarkdown(text)
-        self.history.insertHtml("<br>")
+        ai_label = "AI" if is_en else "答"
+        
+        # 1. 擦除“思考中”占位符
+        if self.thinking_mark and self.chat_log.endswith(self.thinking_mark):
+            self.chat_log = self.chat_log[:-len(self.thinking_mark)]
+            
+        # 2. 填入真实回复
+        self.chat_log += f"**{ai_label}**：\n{text}\n\n---\n\n"
+        self.history.setMarkdown(self.chat_log)
         self.history.verticalScrollBar().setValue(self.history.verticalScrollBar().maximum())
+        
+        # 3. 解锁 UI
+        self.input.setEnabled(True)
+        self.btn_send.setEnabled(True)
+        self.btn_send.setText("Send" if is_en else "发送")
+        self.input.setFocus() # 贴心细节：自动把光标放回输入框
