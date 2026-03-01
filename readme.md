@@ -2,8 +2,6 @@
 
 # NekoHub 🐱
 
-*English | [简体中文*](https://www.google.com/search?q=%23%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87)
-
 NekoHub is a modern, lightweight, and highly intelligent desktop notification hub for [Gotify](https://gotify.net/), built with Python, PySide6, and Fluent Design.
 
 In version 1.1.0, it has evolved beyond a simple push client. It now features an **AI Automation Center**, **Smart Black/Whitelist Filtering**, and a **Multi-Platform Forwarding Engine** (DingTalk, Telegram, SMTP), making it the ultimate command center for all your server and app notifications.
