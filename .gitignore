@@ -1,0 +1,16 @@
+# 配置文件与数据库 (千万不能传)
+settings.json
+nekohub.db
+
+# 虚拟环境
+venv/
+
+# 打包输出和缓存
+dist/
+dist2/
+build/
+__pycache__/
+*.spec
+
+# 备份文件
+*.txt
