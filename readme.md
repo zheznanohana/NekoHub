@@ -6,6 +6,8 @@ NekoHub is a modern, lightweight, and highly intelligent desktop notification hu
 
 In version 1.1.0, it has evolved beyond a simple push client. It now features an **AI Automation Center**, **Smart Black/Whitelist Filtering**, and a **Multi-Platform Forwarding Engine** (DingTalk, Telegram, SMTP), making it the ultimate command center for all your server and app notifications.
 
+<img width="1432" height="933" alt="image" src="https://github.com/user-attachments/assets/25c3b940-cd50-4002-9e4a-cd1fc0211e61" />
+
 ## ✨ Key Features (v1.1.0)
 
 * **Modern Fluent UI & Markdown:** Beautiful native Windows 11 Fluent Design scrollbars and full Markdown rendering for notifications. Seamless switching between English and Simplified Chinese.
