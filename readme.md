@@ -9,7 +9,6 @@
 
 NekoHub is a modern, lightweight, and smart desktop client for [Gotify](https://gotify.net/), built with Python, PySide6, and Fluent Design. It goes beyond simple push notifications by integrating a powerful AI assistant that can auto-summarize your alerts and chat with you about your notification history.
 
-![NekoHub Screenshot](https://via.placeholder.com/800x450.png?text=Replace+with+your+screenshot) *(Tip: Replace this link with a real screenshot of your app!)*
 
 ## ✨ Key Features
 
