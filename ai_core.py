@@ -1,10 +1,10 @@
 # ai_core.py
-import threading, requests, time, hmac, hashlib, base64, urllib.parse, smtplib
-from email.mime.text import MIMEText
+import json
+import threading
+import time
+import requests
 from datetime import datetime
-from PySide6.QtCore import QObject, QTimer, Signal
-from storage import latest_messages
-from gotify_client import send_message
+from PySide6.QtCore import QObject, Signal, QTimer
 
 class AiManager(QObject):
     chat_response_ready = Signal(str)
@@ -13,101 +13,244 @@ class AiManager(QObject):
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
-        self.task_counters, self.last_run_minute, self.last_run_timestamp = {}, {}, {}
-        self.timer = QTimer(self); self.timer.timeout.connect(self._check_periodic_tasks); self.timer.start(60000) 
+        self.rss_plugin = None
+        self.imap_plugin = None
+        self.web3_plugin = None
+        
+        # --- 任务调度状态存储 ---
+        self.task_counters = {}   # 累计计数触发用
+        self.running_tasks = set() # 防止任务重复并发
+        self.last_run_times = {}  # 定时点/间隔执行记录
+        
+        # 每分钟心跳定时器，处理定时任务
+        self.timer_1m = QTimer()
+        self.timer_1m.timeout.connect(self._on_1m_tick)
+        self.timer_1m.start(60000)
 
-    def update_settings(self, new_settings): self.settings = new_settings
+    def mount_plugins(self, rss, imap, web3):
+        self.rss_plugin = rss
+        self.imap_plugin = imap
+        self.web3_plugin = web3
 
-    def _do_forward(self, title, content):
-        """核心转发引擎"""
-        s = self.settings
-        if not s.forward_enabled: return
-        msg_text = f"【NekoHub】\n📌 标题：{title}\n📝 内容：\n{content}"
+    def update_settings(self, new_settings):
+        self.settings = new_settings
 
-        # --- 1. 钉钉转发 (支持加签模式) ---
-        if s.dingtalk_webhook:
-            def send_ding():
-                url = s.dingtalk_webhook
-                if s.dingtalk_secret:
-                    timestamp = str(round(time.time() * 1000))
-                    secret_enc = s.dingtalk_secret.encode('utf-8')
-                    string_to_sign = f'{timestamp}\n{s.dingtalk_secret}'
-                    hmac_code = hmac.new(secret_enc, string_to_sign.encode('utf-8'), digestmod=hashlib.sha256).digest()
-                    sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
-                    url = f"{url}&timestamp={timestamp}&sign={sign}"
-                try: 
-                    res = requests.post(url, json={"msgtype": "text", "text": {"content": msg_text}}, timeout=10)
-                    print(f"DingTalk Response: {res.text}") # 调试用
-                except Exception as e: print(f"DingTalk Error: {e}")
-            threading.Thread(target=send_ding, daemon=True).start()
-
-        # --- 2. Telegram 转发 (标准 API) ---
-        if s.tg_bot_token and s.tg_chat_id:
-            def send_tg():
-                url = f"https://api.telegram.org/bot{s.tg_bot_token}/sendMessage"
-                # 注意：TG 转发需要确保 chat_id 正确，个人通常是数字，群组是负数
-                payload = {"chat_id": s.tg_chat_id, "text": msg_text}
-                try: 
-                    res = requests.post(url, json=payload, timeout=10)
-                    print(f"Telegram Response: {res.text}") 
-                except Exception as e: print(f"Telegram Error: {e}")
-            threading.Thread(target=send_tg, daemon=True).start()
-
-        # --- 3. 邮件转发 ---
-        if s.email_smtp and s.email_to:
-            def send_mail():
+    # ---------------------------------------------------------
+    # 核心逻辑一：任务触发器 (累计计数触发)
+    # ---------------------------------------------------------
+    def on_new_message(self, gotify_msg: dict):
+        """当收到新的 Gotify 消息时，检查是否有 '累计计数' 触发的任务"""
+        for task in self.settings.ai_tasks:
+            if not task.get("enabled", False): 
+                continue
+                
+            if task.get("mode") == "count":
+                tid = task["id"]
+                self.task_counters[tid] = self.task_counters.get(tid, 0) + 1
+                
                 try:
-                    msg = MIMEText(msg_text, 'plain', 'utf-8')
-                    msg['Subject'], msg['From'], msg['To'] = f"NekoHub: {title}", s.email_user, s.email_to
-                    with smtplib.SMTP_SSL(s.email_smtp, s.email_port) as svr:
-                        svr.login(s.email_user, s.email_pass); svr.sendmail(s.email_user, [s.email_to], msg.as_string())
-                except Exception as e: print(f"Email Error: {e}")
-            threading.Thread(target=send_mail, daemon=True).start()
+                    limit = int(task.get("value", "10"))
+                except:
+                    limit = 10
+                    
+                if self.task_counters[tid] >= limit:
+                    self.task_counters[tid] = 0 # 重置计数
+                    self.run_task_async(task)
 
-    def on_new_message(self, msg: dict):
-        if self.settings.forward_mode in [0, 1]:
-            self._do_forward(msg.get("title", "新通知"), msg.get("message", ""))
-        for t in self.settings.ai_tasks:
-            if not t.get("enabled", True) or t.get("mode") != "count": continue
-            tid = t.get("id"); self.task_counters[tid] = self.task_counters.get(tid, 0) + 1
-            if self.task_counters[tid] >= int(t.get("value", "10")):
-                self.task_counters[tid] = 0; self.run_task_async(t, "【累计触发】")
+    # ---------------------------------------------------------
+    # 核心逻辑二：定时触发器 (心跳检测)
+    # ---------------------------------------------------------
+    def _on_1m_tick(self):
+        """每分钟检测一次定时或间隔任务"""
+        now = datetime.now()
+        hm = now.strftime("%H:%M")
+        
+        for task in self.settings.ai_tasks:
+            if not task.get("enabled", False): 
+                continue
+                
+            tid = task["id"]
+            mode = task.get("mode")
+            val = str(task.get("value", "")).strip()
+            
+            # 1. 定时执行 (如 08:00, 20:00)
+            if mode == "time":
+                times = [x.strip() for x in val.split(",") if x.strip()]
+                if hm in times:
+                    # 确保这一分钟只跑一次
+                    if self.last_run_times.get(tid) != hm:
+                        self.last_run_times[tid] = hm
+                        self.run_task_async(task)
+            
+            # 2. 固定间隔执行 (如 每隔 60 分钟)
+            elif mode == "interval":
+                try:
+                    mins = int(val)
+                except:
+                    continue
+                if mins <= 0: continue
+                
+                last_ts = self.last_run_times.get(tid, 0)
+                if time.time() - last_ts >= mins * 60:
+                    self.last_run_times[tid] = time.time()
+                    self.run_task_async(task)
 
-    def _check_periodic_tasks(self):
-        now_str, now_ts = datetime.now().strftime("%H:%M"), time.time()
-        for t in self.settings.ai_tasks:
-            if not t.get("enabled", True): continue
-            tid, mode, val = t.get("id"), t.get("mode"), str(t.get("value", ""))
-            if mode == "time" and now_str in [x.strip() for x in val.split(",")] and self.last_run_minute.get(tid) != now_str:
-                self.last_run_minute[tid] = now_str; self.run_task_async(t, f"【定时 {now_str}】")
-            elif mode == "interval" and now_ts - self.last_run_timestamp.get(tid, 0) >= int(val or 60) * 60:
-                self.last_run_timestamp[tid] = now_ts; self.run_task_async(t, "【频率触发】")
+    # ---------------------------------------------------------
+    # 核心逻辑三：AI 对话逻辑 (带精准过滤)
+    # ---------------------------------------------------------
+    def send_chat_async(self, user_msg: str, domains: list):
+        threading.Thread(target=self._process_chat, args=(user_msg, domains), daemon=True).start()
 
-    def run_task_async(self, task, prefix=""):
-        threading.Thread(target=self._execute_llm_task, args=(task, prefix), daemon=True).start()
-
-    def _execute_llm_task(self, task, prefix):
-        name, limit = task.get('name', '任务'), int(task.get("context_limit", 50))
-        rows = latest_messages(limit)
-        if not rows: return
-        self.task_status_signal.emit(name, f"AI 分析中({len(rows)}条)...", False)
-        prompt = f"{self.settings.ai_system_prompt}\n指令：{task.get('prompt')}\n内容：\n" + "\n".join([f"[{r[5]}] {r[2]}: {r[3]}" for r in rows])
-        reply, err = self._call_llm(prompt)
-        if reply:
-            if self.settings.forward_mode in [0, 2]: self._do_forward(f"AI任务: {name}", reply)
-            if self.settings.gotify_url: send_message(self.settings.gotify_url, self.settings.gotify_send_token, f"🤖 {name}", f"{prefix}\n{reply}")
-            self.task_status_signal.emit(name, "已完成并分发", False)
-
-    def send_chat_async(self, text): threading.Thread(target=self._process_chat, args=(text,), daemon=True).start()
-    def _process_chat(self, text):
-        limit = getattr(self.settings, "ai_chat_context_limit", 50); rows = latest_messages(limit)
-        prompt = f"问：{text}\n背景：\n" + "\n".join([f"[{r[5]}] {r[2]}: {r[3]}" for r in rows])
-        reply, err = self._call_llm(prompt); self.chat_response_ready.emit(reply if not err else f"错误：{err}")
-
-    def _call_llm(self, content):
-        base = self.settings.ai_base_url.strip().rstrip('/')
-        url = f"{base}/chat/completions" if "/v1" in base or "localhost" in base else f"{base}/v1/chat/completions"
+    def _process_chat(self, user_msg: str, domains: list):
         try:
-            r = requests.post(url, headers={"Authorization": f"Bearer {self.settings.ai_api_key}"}, json={"model": self.settings.ai_model, "messages": [{"role": "user", "content": content}]}, timeout=35)
-            return r.json()["choices"][0]["message"]["content"], None
-        except Exception as e: return None, str(e)
+            s = self.settings
+            limit_gotify = getattr(s, "ai_limit_gotify", 20)
+            limit_rss = getattr(s, "ai_limit_rss", 10)
+            limit_imap = getattr(s, "ai_limit_imap", 10)
+            limit_web3 = getattr(s, "ai_limit_web3", 20)
+
+            context_texts = []
+            
+            # 1. 严格过滤后的 Gotify 原生通知
+            if "gotify" in domains:
+                try:
+                    from storage import latest_messages
+                    # 深度拉取，防止过滤掉标签后条数不足
+                    raw_msgs = latest_messages(200) 
+                    gotify_pure = []
+                    for m in raw_msgs:
+                        title = str(m[2] or "").upper()
+                        # 【核心改动：防侧漏】如果标题带了插件标签或AI前缀，不作为“通知”来源
+                        if any(tag in title for tag in ["[RSS]", "[WEB3]", "[IMAP]", "[AI任务完成]"]):
+                            continue
+                        gotify_pure.append(f"通知: {m[2]}\n内容: {m[3]}")
+                        if len(gotify_pure) >= limit_gotify:
+                            break
+                    if gotify_pure:
+                        context_texts.append("【原生通知流】\n" + "\n".join(gotify_pure))
+                except: pass
+
+            # 2. 独立 RSS (只有勾选了才进上下文)
+            if "rss" in domains and self.rss_plugin:
+                data = self.rss_plugin.fetch_data(is_bg=True)[:limit_rss]
+                if data:
+                    context_texts.append("【RSS 订阅资讯】\n" + "\n".join([f"标题: {d['title']}\n摘要: {d['summary']}" for d in data]))
+
+            # 3. 独立 邮件
+            if "imap" in domains and self.imap_plugin:
+                data = self.imap_plugin.fetch_data(is_bg=True)[:limit_imap]
+                if data:
+                    context_texts.append("【邮件动态】\n" + "\n".join([f"发件人: {d['source']}\n内容: {d['title']}" for d in data]))
+
+            # 4. 独立 Web3
+            if "web3" in domains and self.web3_plugin:
+                data = self.web3_plugin.fetch_data(is_bg=True)[:limit_web3]
+                if data:
+                    context_texts.append("【链上资金预警】\n" + "\n".join([f"账户: {d['source']}\n标题: {d['title']}\n详情: {d['summary']}" for d in data]))
+
+            full_context = "\n\n".join(context_texts)
+            system_prompt = "你是一个专业的信息处理助手。请根据提供的背景上下文回答用户。背景数据中不存在的内容请直说。"
+            
+            # 组织请求
+            payload = {
+                "model": s.ai_model,
+                "messages": [
+                    {"role": "system", "content": f"{system_prompt}\n\n背景数据：\n{full_context if full_context else '暂无勾选的数据源或数据为空。'}"},
+                    {"role": "user", "content": user_msg}
+                ],
+                "temperature": 0.7
+            }
+            
+            headers = {"Authorization": f"Bearer {s.ai_api_key}", "Content-Type": "application/json"}
+            resp = requests.post(s.ai_base_url + "/chat/completions", json=payload, headers=headers, timeout=60)
+            
+            if resp.status_code == 200:
+                self.chat_response_ready.emit(resp.json()["choices"][0]["message"]["content"])
+            else:
+                self.chat_response_ready.emit(f"⚠️ API 错误: {resp.status_code}")
+        except Exception as e:
+            self.chat_response_ready.emit(f"⚠️ 请求异常: {str(e)}")
+
+    # ---------------------------------------------------------
+    # 核心逻辑四：自动化任务执行 (带隔离逻辑)
+    # ---------------------------------------------------------
+    def run_task_async(self, task: dict):
+        tid = task.get("id")
+        if tid in self.running_tasks: return
+        self.running_tasks.add(tid)
+        threading.Thread(target=self._run_task, args=(task,), daemon=True).start()
+
+    def _run_task(self, task: dict):
+        try:
+            name = task.get("name", "Unnamed")
+            prompt = task.get("prompt", "")
+            domains = task.get("domains", [])
+            s = self.settings
+
+            if not s.ai_base_url or not s.ai_api_key:
+                self.task_status_signal.emit(name, "缺少 AI 配置", True)
+                return
+
+            # 获取该任务特定的条数限制
+            limit_gotify = int(task.get("limit_gotify", 20))
+            limit_rss = int(task.get("limit_rss", 10))
+            limit_imap = int(task.get("limit_imap", 10))
+            limit_web3 = int(task.get("limit_web3", 20))
+
+            context_texts = []
+            
+            # 处理选中的数据源，执行同样的“净水过滤”逻辑
+            if "gotify" in domains:
+                try:
+                    from storage import latest_messages
+                    raw_msgs = latest_messages(200)
+                    gotify_pure = []
+                    for m in raw_msgs:
+                        title = str(m[2] or "").upper()
+                        if any(tag in title for tag in ["[RSS]", "[WEB3]", "[IMAP]", "[AI任务完成]"]):
+                            continue
+                        gotify_pure.append(f"[{m[2]}] {m[3]}")
+                        if len(gotify_pure) >= limit_gotify: break
+                    if gotify_pure: context_texts.append("=== 通知数据 ===\n" + "\n".join(gotify_pure))
+                except: pass
+
+            if "rss" in domains and self.rss_plugin:
+                data = self.rss_plugin.fetch_data(is_bg=True)[:limit_rss]
+                if data: context_texts.append("=== RSS 订阅 ===\n" + "\n".join([d['title'] for d in data]))
+
+            if "imap" in domains and self.imap_plugin:
+                data = self.imap_plugin.fetch_data(is_bg=True)[:limit_imap]
+                if data: context_texts.append("=== 邮件动态 ===\n" + "\n".join([d['title'] for d in data]))
+
+            if "web3" in domains and self.web3_plugin:
+                data = self.web3_plugin.fetch_data(is_bg=True)[:limit_web3]
+                if data: context_texts.append("=== 链上异动 ===\n" + "\n".join([d['title'] for d in data]))
+
+            full_context = "\n\n".join(context_texts)
+            if not full_context.strip():
+                self.task_status_signal.emit(name, "当前无相关内容可处理", False)
+                return
+
+            self.task_status_signal.emit(name, "正在智能分析中...", False)
+            
+            payload = {
+                "model": s.ai_model,
+                "messages": [{"role": "user", "content": f"任务指令: {prompt}\n\n数据背景: {full_context}"}],
+                "temperature": 0.5
+            }
+            headers = {"Authorization": f"Bearer {s.ai_api_key}", "Content-Type": "application/json"}
+            resp = requests.post(s.ai_base_url + "/chat/completions", json=payload, headers=headers, timeout=120)
+            
+            if resp.status_code == 200:
+                ans = resp.json()["choices"][0]["message"]["content"]
+                from gotify_client import send_message
+                # 任务完成后把结果发回 Gotify 弹窗和记录
+                send_message(s.gotify_url, s.gotify_send_token, f"[AI任务完成] {name}", ans, priority=5)
+                self.task_status_signal.emit(name, "执行成功", False)
+            else:
+                self.task_status_signal.emit(name, f"API 响应失败: {resp.status_code}", True)
+
+        except Exception as e:
+            self.task_status_signal.emit(name, f"崩溃: {str(e)}", True)
+        finally:
+            self.running_tasks.discard(task.get("id"))
