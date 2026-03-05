@@ -1,0 +1,33 @@
+{
+  "ai": {
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "sk-e4e1328628904f1ab8fec50413a758b0",
+    "model": "deepseek-chat"
+  },
+  "sources": {
+    "gotify": {
+      "enabled": true,
+      "url": "https://notify.diu.ac.cn/",
+      "client_token": "CBy3EA.goihUB8q",
+      "app_token": "AB3Kv9AbdIarjtd"
+    },
+    "rss": {
+      "enabled": true,
+      "limit": 30,
+      "urls": [
+        {"name": "少数派", "url": "https://sspai.com/feed"}
+      ],
+      "interval": 60
+    }
+  },
+  "tasks": [
+    {
+      "id": "task_01",
+      "name": "全局信息汇总",
+      "mode": "interval",
+      "value": "60",
+      "domains": ["gotify", "rss"],
+      "prompt": "你是一个专业的信息处理助手。请总结以下背景数据，按【核心摘要】【重要事项】【分项汇报】输出。无异动则写明。"
+    }
+  ]
+}

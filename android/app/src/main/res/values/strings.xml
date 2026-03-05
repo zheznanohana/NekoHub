@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NekoHub</string>
+    <string name="login">登录</string>
+    <string name="logout">退出登录</string>
+    <string name="username">用户名</string>
+    <string name="password">密码</string>
+    <string name="login_hint">默认账号：admin / admin</string>
+    <string name="login_success">登录成功</string>
+    <string name="login_failed">登录失败</string>
+    <string name="network_error">网络错误</string>
+    <string name="inbox">收件箱</string>
+    <string name="ai_chat">AI 助手</string>
+    <string name="tasks">自动化任务</string>
+    <string name="forward">通知转发</string>
+    <string name="rss">RSS 订阅</string>
+    <string name="settings">系统设置</string>
+    <string name="loading">加载中…</string>
+    <string name="refresh">刷新</string>
+    <string name="no_data">暂无数据</string>
+    <string name="error">错误</string>
+    <string name="retry">重试</string>
+</resources>

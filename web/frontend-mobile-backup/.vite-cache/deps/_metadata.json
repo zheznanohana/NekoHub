@@ -1,0 +1,79 @@
+{
+  "hash": "e2918cd3",
+  "configHash": "fe672ab3",
+  "lockfileHash": "13a80b59",
+  "browserHash": "e635a8d7",
+  "optimized": {
+    "@element-plus/icons-vue": {
+      "src": "../../node_modules/@element-plus/icons-vue/dist/index.js",
+      "file": "@element-plus_icons-vue.js",
+      "fileHash": "a9112d6d",
+      "needsInterop": false
+    },
+    "axios": {
+      "src": "../../node_modules/axios/index.js",
+      "file": "axios.js",
+      "fileHash": "6a60b5fe",
+      "needsInterop": false
+    },
+    "element-plus": {
+      "src": "../../node_modules/element-plus/es/index.mjs",
+      "file": "element-plus.js",
+      "fileHash": "588891e3",
+      "needsInterop": false
+    },
+    "element-plus/dist/locale/zh-cn.mjs": {
+      "src": "../../node_modules/element-plus/dist/locale/zh-cn.mjs",
+      "file": "element-plus_dist_locale_zh-cn__mjs.js",
+      "fileHash": "d14b1f3f",
+      "needsInterop": false
+    },
+    "markdown-it": {
+      "src": "../../node_modules/markdown-it/index.mjs",
+      "file": "markdown-it.js",
+      "fileHash": "99e1b87e",
+      "needsInterop": false
+    },
+    "pinia": {
+      "src": "../../node_modules/pinia/dist/pinia.mjs",
+      "file": "pinia.js",
+      "fileHash": "d9e7ffdc",
+      "needsInterop": false
+    },
+    "socket.io-client": {
+      "src": "../../node_modules/socket.io-client/build/esm/index.js",
+      "file": "socket__io-client.js",
+      "fileHash": "f47fdb9d",
+      "needsInterop": false
+    },
+    "vue": {
+      "src": "../../node_modules/vue/dist/vue.runtime.esm-bundler.js",
+      "file": "vue.js",
+      "fileHash": "49a08b49",
+      "needsInterop": false
+    },
+    "vue-router": {
+      "src": "../../node_modules/vue-router/dist/vue-router.mjs",
+      "file": "vue-router.js",
+      "fileHash": "364f1c9c",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-XZMVDBR6": {
+      "file": "chunk-XZMVDBR6.js"
+    },
+    "chunk-AYVSL3LM": {
+      "file": "chunk-AYVSL3LM.js"
+    },
+    "chunk-RNWUNH7L": {
+      "file": "chunk-RNWUNH7L.js"
+    },
+    "chunk-U6CSW335": {
+      "file": "chunk-U6CSW335.js"
+    },
+    "chunk-G3PMV62Z": {
+      "file": "chunk-G3PMV62Z.js"
+    }
+  }
+}

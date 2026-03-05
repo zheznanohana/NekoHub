@@ -1,0 +1,20 @@
+{
+  "name": "NekoHub",
+  "short_name": "NekoHub",
+  "description": "现代化的任务管理和消息处理平台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#409eff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "lang": "zh-CN"
+}

@@ -1,0 +1,139 @@
+# NekoHub Monorepo .gitignore
+
+# ====================
+# 通用忽略
+# ====================
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+.settings/
+
+# 日志
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+.tmp/
+
+# ====================
+# PC 端 (Python)
+# ====================
+
+# Python 缓存
+pc/__pycache__/
+pc/*.py[cod]
+pc/*$py.class
+pc/*.pyo
+
+# 虚拟环境
+pc/venv/
+pc/env/
+pc/.env
+
+# PyInstaller 打包产物
+pc/build/
+pc/dist/
+pc/*.spec
+
+# 用户私密数据与配置
+pc/settings.json
+pc/neko_messages.db
+pc/config/
+
+# ====================
+# Web 端 (Vue + Flask)
+# ====================
+
+# Node.js
+web/node_modules/
+web/package-lock.json
+web/dist/
+web/.nuxt/
+web/.output/
+
+# Python
+web/__pycache__/
+web/*.py[cod]
+web/venv/
+web/env/
+
+# 环境配置
+web/.env
+web/.env.local
+web/.env.production
+web/instance/
+
+# 构建产物
+web/frontend/dist/
+web/frontend/.nuxt/
+
+# ====================
+# Android 端 (Kotlin)
+# ====================
+
+# Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/*/build/
+
+# IDE
+android/.idea/
+android/local.properties
+
+# 签名密钥
+android/*.jks
+android/*.keystore
+android/key.properties
+
+# APK 文件
+android/*.apk
+android/*.ap_
+android/*.aab
+
+# 本地配置
+android/local.properties
+android/secrets/
+
+# ====================
+# 文档
+# ====================
+
+# 编译产物
+docs/.vitepress/dist/
+docs/node_modules/
+
+# ====================
+# 敏感信息 (全局)
+# ====================
+
+# 密码和密钥
+*.pem
+*.key
+*.secret
+*password*
+*credential*
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# 配置文件 (含敏感信息)
+config.json
+secrets.json
+credentials.json

@@ -1,0 +1,105 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master, mobile ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/frontend/package-lock.json
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Frontend Dependencies
+        working-directory: ./mobile/frontend
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: ./mobile/frontend
+        run: npm run build
+
+      - name: Create Capacitor Config
+        working-directory: ./mobile/frontend
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.nekohub.app",
+            "appName": "NekoHub",
+            "webDir": "dist",
+            "bundledWebRuntime": false
+          }
+          EOF
+
+      - name: Sync Capacitor
+        working-directory: ./mobile/frontend
+        run: npx cap sync android
+
+      - name: Fix Java Version
+        working-directory: ./mobile/frontend/android
+        run: |
+          sed -i 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' app/capacitor.build.gradle
+          sed -i 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' capacitor-cordova-android-plugins/build.gradle
+          sed -i 's/JavaVersion.VERSION_21/JavaVersion.VERSION_17/g' node_modules/@capacitor/android/capacitor/build.gradle || true
+
+      - name: Build Release APK
+        working-directory: ./mobile/frontend/android
+        run: ./gradlew assembleRelease
+
+      - name: Sign APK
+        working-directory: ./mobile/frontend/android
+        run: |
+          # 创建签名密钥
+          keytool -genkey -v -keystore /tmp/release-key.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias nekohub \
+            -storepass nekohub123 \
+            -keypass nekohub123 \
+            -dname "CN=NekoHub, OU=Development, O=NekoHub, C=CN"
+          
+          # 对齐并签名
+          $ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 \
+            app/build/outputs/apk/release/app-release-unsigned.apk \
+            /tmp/NekoHub-aligned.apk
+          
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks /tmp/release-key.jks \
+            --ks-pass pass:nekohub123 \
+            --out /tmp/NekoHub-signed.apk \
+            /tmp/NekoHub-aligned.apk
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NekoHub-v1.0.0-release
+          path: /tmp/NekoHub-signed.apk
+          retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: /tmp/NekoHub-signed.apk
+          generate_release_notes: true
