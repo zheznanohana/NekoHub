@@ -137,3 +137,9 @@ docs/node_modules/
 config.json
 secrets.json
 credentials.json
+
+# Shared backend and frontend runtime artifacts
+**/__pycache__/
+*.pyc
+web/frontend/node_modules/
+node_modules/

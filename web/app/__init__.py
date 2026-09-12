@@ -42,6 +42,19 @@ def create_app(config_name=None):
     app.register_blueprint(api.bp, url_prefix='/api')
     app.register_blueprint(ws.bp, url_prefix='/ws')
     app.register_blueprint(openclaw.bp, url_prefix='/api/openclaw')
+
+    # Shared graph-memory backend. Separate DB leaves legacy message data untouched.
+    from pathlib import Path
+    import sys
+    root = str(Path(__file__).resolve().parents[2])
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from backend.memory_v1.api import make_blueprint
+    from backend.memory_v1.store import Store
+    from flask_jwt_extended import jwt_required, get_jwt_identity
+    memory_store = Store(os.environ.get('MEMORY_DB_PATH', str(Path(app.instance_path) / 'memory.db')))
+    app.extensions['memory_store'] = memory_store
+    app.register_blueprint(make_blueprint(memory_store, jwt_required(), get_jwt_identity), url_prefix='/api/memory/v1')
     
     # 注册模型
     with app.app_context():

@@ -9,6 +9,7 @@ import RSS from '@/components/RSS.vue'
 import Imap from '@/components/Imap.vue'
 import Web3 from '@/components/Web3.vue'
 import Settings from '@/components/Settings.vue'
+import MemoryChat from '@/components/MemoryChat.vue'
 
 const routes = [
   { 
@@ -25,6 +26,7 @@ const routes = [
       { path: '', redirect: '/inbox' },
       { path: 'inbox', name: 'Inbox', component: Inbox },
       { path: 'ai-chat', name: 'AIChat', component: AIChat },
+      { path: 'memory', name: 'MemoryChat', component: MemoryChat },
       { path: 'tasks', name: 'Tasks', component: Tasks },
       { path: 'forward', name: 'Forward', component: Forward },
       { path: 'rss', name: 'RSS', component: RSS },

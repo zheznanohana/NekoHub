@@ -48,6 +48,10 @@
           <span>AI 助手</span>
         </el-menu-item>
         
+        <el-menu-item index="/memory">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>记忆工作台</span>
+        </el-menu-item>
         <el-menu-item index="/tasks">
           <el-icon><Calendar /></el-icon>
           <span>自动化任务</span>

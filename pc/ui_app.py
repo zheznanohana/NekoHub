@@ -477,6 +477,8 @@ class NekoHubWindow(FluentWindow):
         self.ai_manager.mount_plugins(self.rss_page, self.imap_page, self.web3_page)
         
         self.ai_chat_page = AiPage(self.ai_manager, self.get_settings, self.save_settings)
+        from ui_memory import MemoryPage
+        self.memory_page = MemoryPage()
         self.ai_tasks_page = AiTasksPage(self.ai_manager, self.get_settings, self.save_settings)
         self.forward_page = ForwardPage(self.get_settings, self.save_settings)
         self.settings_page = SettingsPage(self.get_settings, self.save_settings, self.send_test, lambda: self._start_ws())
@@ -486,6 +488,7 @@ class NekoHubWindow(FluentWindow):
         self.addSubInterface(self.imap_page, FluentIcon.FOLDER, get_text(self.lang, "imap"))
         self.addSubInterface(self.web3_page, FluentIcon.FINGERPRINT, get_text(self.lang, "web3"))
         self.addSubInterface(self.ai_chat_page, FluentIcon.CHAT, get_text(self.lang, "ai_chat"))
+        self.addSubInterface(self.memory_page, FluentIcon.CHAT, "记忆工作台")
         self.addSubInterface(self.ai_tasks_page, FluentIcon.CALENDAR, get_text(self.lang, "tasks"))
         self.addSubInterface(self.forward_page, FluentIcon.SEND, get_text(self.lang, "forward"))
         self.addSubInterface(self.settings_page, FluentIcon.SETTING, get_text(self.lang, "settings"), NavigationItemPosition.BOTTOM)
@@ -505,11 +508,22 @@ class NekoHubWindow(FluentWindow):
         self.rss_page.new_item_signal.connect(self._handle_plugin_notification)
         self.imap_page.new_item_signal.connect(self._handle_plugin_notification)
         self.web3_page.new_item_signal.connect(self._handle_plugin_notification)
+        self.memory_page.import_requested.connect(self._import_memory_caches)
+        self.rss_page.fetch_finished.connect(lambda:self._import_memory_caches('rss'))
+        self.imap_page.fetch_done_signal.connect(lambda bg:self._import_memory_caches('imap'))
+        self.web3_page.fetch_finished.connect(lambda:self._import_memory_caches('web3'))
         
         self._ws = None
         self._refresh_full_once()
         self._initial_history_fetch_async()
         self._start_ws()
+
+    def _import_memory_caches(self, source=None):
+        from memory_sources import snapshots
+        caches={'rss':self.rss_page.feed_cache,'imap':self.imap_page.mail_cache,'web3':self.web3_page.tx_cache}
+        for kind,cache in caches.items():
+            if source is None or source==kind:
+                self.memory_page.enqueue_documents(snapshots(kind,cache))
 
     def closeEvent(self, e):
         e.ignore()
@@ -666,6 +680,7 @@ class NekoHubWindow(FluentWindow):
 
     @Slot(str, str, str)
     def _handle_plugin_notification(self, title, content, domain_type):
+        # Full plugin snapshots are imported after fetch; avoid duplicate subjects.
         s = self._settings
         if getattr(s, "sound_enabled", True):
             self.sound.play()

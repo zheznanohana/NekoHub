@@ -89,6 +89,13 @@ class AiPage(QWidget):
         self.history = TextEdit()
         self.history.setReadOnly(True)
         root.addWidget(self.history, 1)
+        # Keep the original chat/config controls; Pi results render inline below history.
+        from ui_memory import MemoryPage
+        self.memory_results=MemoryPage();self.memory_results.hide()
+        self.memory_results.scroll.setMinimumHeight(380)
+        root.addWidget(self.memory_results.scroll,2)
+        self.memory_results.scroll.hide()
+        self.ai_manager.chat_blocks_ready.connect(self._on_blocks)
 
         # 3. [完美极简重构]：用纯文本输入框替代 SpinBox
         source_card = CardWidget()
@@ -229,7 +236,13 @@ class AiPage(QWidget):
         if self.chk_imap.isChecked(): domains.append("imap")
         if self.chk_web3.isChecked(): domains.append("web3")
         
+        self.ai_manager.view_context=dict(self.memory_results.view_context)
         self.ai_manager.send_chat_async(text, domains)
+
+    def _on_blocks(self, blocks):
+        if blocks:
+            self.memory_results.scroll.show()
+            self.memory_results.render(blocks)
 
     def _on_reply(self, text):
         ai_label = "AI" if self.is_en else "答"

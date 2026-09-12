@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/gotify/server.git",
+  "checkout": "server",
+  "revision": "0c24edaa8dc0717e70234e9d2a7a078c26a28131",
+  "license": "MIT",
+  "note": "Local upstream source checkout, unmodified. Runtime image is separately versioned."
+}

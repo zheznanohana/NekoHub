@@ -8,11 +8,13 @@ from PySide6.QtCore import QObject, Signal, QTimer
 
 class AiManager(QObject):
     chat_response_ready = Signal(str)
+    chat_blocks_ready = Signal(list)
     task_status_signal = Signal(str, str, bool)
 
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
+        self.view_context = None
         self.rss_plugin = None
         self.imap_plugin = None
         self.web3_plugin = None
@@ -149,27 +151,24 @@ class AiManager(QObject):
                     context_texts.append("【链上资金预警】\n" + "\n".join([f"账户: {d['source']}\n标题: {d['title']}\n详情: {d['summary']}" for d in data]))
 
             full_context = "\n\n".join(context_texts)
-            system_prompt = "你是一个专业的信息处理助手。请根据提供的背景上下文回答用户。背景数据中不存在的内容请直说。"
-            
-            # 组织请求
-            payload = {
-                "model": s.ai_model,
-                "messages": [
-                    {"role": "system", "content": f"{system_prompt}\n\n背景数据：\n{full_context if full_context else '暂无勾选的数据源或数据为空。'}"},
-                    {"role": "user", "content": user_msg}
-                ],
-                "temperature": 0.7
-            }
-            
-            headers = {"Authorization": f"Bearer {s.ai_api_key}", "Content-Type": "application/json"}
-            resp = requests.post(s.ai_base_url + "/chat/completions", json=payload, headers=headers, timeout=60)
-            
-            if resp.status_code == 200:
-                self.chat_response_ready.emit(resp.json()["choices"][0]["message"]["content"])
-            else:
-                self.chat_response_ready.emit(f"⚠️ API 错误: {resp.status_code}")
+            import os, sys
+            from pathlib import Path
+            root=Path(__file__).resolve().parents[1]
+            if str(root) not in sys.path:sys.path.insert(0,str(root))
+            from backend.memory_v1.store import Store
+            from backend.memory_v1.pi_runtime import run_pi
+            from backend.memory_v1.chat import route,render_command
+            store=Store(os.getenv('MEMORY_DB_PATH',str(root/'backend/memory_v1/memory.db')))
+            provider={'base_url':s.ai_base_url,'api_key':s.ai_api_key,'model':s.ai_model}
+            profiles=getattr(s,'ai_profiles',[]);index=getattr(s,'ai_active_profile_idx',0)
+            if profiles and 0<=index<len(profiles):
+                parts=profiles[index].split('|')
+                if len(parts)==4:provider={'base_url':parts[1],'api_key':parts[2],'model':parts[3]}
+            blocks=render_command(store,'admin',route(user_msg)) if user_msg.startswith('/') else run_pi(user_msg,store,'admin',self.view_context,provider=provider,background=full_context)
+            self.chat_blocks_ready.emit([b for b in blocks if b['type']!='text'])
+            self.chat_response_ready.emit('\n'.join(b['text'] for b in blocks if b['type']=='text') or '结构化结果已显示。写操作等待你确认。')
         except Exception as e:
-            self.chat_response_ready.emit(f"⚠️ 请求异常: {str(e)}")
+            self.chat_response_ready.emit(f"Pi 请求失败（{type(e).__name__}）；请检查原有模型配置和本地运行环境。")
 
     # ---------------------------------------------------------
     # 核心逻辑四：自动化任务执行 (带隔离逻辑)
