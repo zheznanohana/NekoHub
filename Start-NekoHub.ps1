@@ -18,11 +18,14 @@ $env:MEMORY_DB_PATH = Join-Path $State 'memory.db'
 $env:MEMORY_CONNECTOR_OWNER = 'admin'
 $env:MEMORY_AGENT_RUNTIME = 'pi'
 $env:MEMORY_GITHUB_REPO = 'zheznanohana/NekoHub'
+# One-click import of the pre-memory desktop database, when a copy is present.
+$LegacyDb = Join-Path $State 'legacy-nekohub.db'
+if (Test-Path -LiteralPath $LegacyDb) { $env:MEMORY_LEGACY_DB = $LegacyDb }
 $ConfigFile = Join-Path $State 'environment.xml'
 if (Test-Path -LiteralPath $ConfigFile) {
     $SecretConfig = [System.Net.NetworkCredential]::new('', (Import-Clixml -LiteralPath $ConfigFile)).Password | ConvertFrom-Json
     foreach ($Property in $SecretConfig.PSObject.Properties) {
-        if ($Property.Name -in @('MEMORY_LLM_BASE_URL','MEMORY_LLM_MODEL','MEMORY_LLM_API_KEY','MEMORY_GOTIFY_URL','MEMORY_GOTIFY_TOKEN','MEMORY_GITHUB_TOKEN')) {
+        if ($Property.Name -in @('MEMORY_LLM_BASE_URL','MEMORY_LLM_MODEL','MEMORY_LLM_API_KEY','MEMORY_EMBED_BASE_URL','MEMORY_EMBED_MODEL','MEMORY_EMBED_API_KEY','MEMORY_GOTIFY_URL','MEMORY_GOTIFY_TOKEN','MEMORY_GITHUB_TOKEN')) {
             [Environment]::SetEnvironmentVariable($Property.Name, [string]$Property.Value, 'Process')
         }
     }

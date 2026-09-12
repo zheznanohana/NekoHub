@@ -50,7 +50,14 @@ def make_blueprint(store, authenticate, identity, complete=None):
     @bp.route("/status")
     @authenticate
     def status():
-        return jsonify({"llm_configured": bool(complete or (os.getenv("MEMORY_LLM_BASE_URL") and os.getenv("MEMORY_LLM_MODEL"))), "gotify_configured": bool(os.getenv("MEMORY_GOTIFY_URL") and os.getenv("MEMORY_GOTIFY_TOKEN")), "github_configured": bool(os.getenv("MEMORY_GITHUB_REPO")), "jobs": store.jobs(identity())})
+        from .import_legacy import default_path
+        from .retrieval import Embeddings
+        legacy = default_path()
+        embeddings = Embeddings.from_env()
+        return jsonify({"llm_configured": bool(complete or (os.getenv("MEMORY_LLM_BASE_URL") and os.getenv("MEMORY_LLM_MODEL"))), "gotify_configured": bool(os.getenv("MEMORY_GOTIFY_URL") and os.getenv("MEMORY_GOTIFY_TOKEN")), "github_configured": bool(os.getenv("MEMORY_GITHUB_REPO")), "legacy_import_available": bool(legacy and legacy.exists()),
+                        "retrieval": "hybrid" if embeddings else "lexical",
+                        "embed_model": embeddings.model if embeddings else "",
+                        "jobs": store.jobs(identity())})
 
     @bp.route("/daily/latest")
     @authenticate
@@ -98,7 +105,59 @@ def make_blueprint(store, authenticate, identity, complete=None):
     @authenticate
     def confirm(action_id):
         body(())
-        return response([{"type": "text", "text": "操作已执行"}, {"type": "memory.receipt", "data": store.confirm_action(identity(), action_id)}])
+        result = store.confirm_action(identity(), action_id)
+        command = result.pop("command", None)
+        if command and command["command"] == "memory.diary.write":
+            from .diary import Diary
+            result = Diary(store).write(identity(), command["day"], command["text"])
+        return response([{"type": "text", "text": "操作已执行"}, {"type": "memory.receipt", "data": result}])
+
+    @bp.route("/reindex", methods=["POST"])
+    @authenticate
+    def reindex():
+        body(())
+        index = store.index()
+        receipt = {**index.sync(identity()), **{"embed_" + k: v for k, v in index.embed_pending(identity()).items()}}
+        return response([{"type": "memory.receipt", "data": {k: v for k, v in receipt.items() if k in ("indexed", "dropped", "pending", "embed_state", "embed_embedded", "embed_pending")}}])
+
+    @bp.route("/diary")
+    @authenticate
+    def diary():
+        from .diary import Diary
+        args = {key: request.args.get(key, "") for key in ("from", "to", "text")}
+        if any(len(value) > 1000 for value in args.values()):
+            raise ValueError("invalid diary filter")
+        return response([Diary(store).block(identity(), args["from"], args["to"], args["text"])])
+
+    @bp.route("/diary", methods=["POST"])
+    @authenticate
+    def write_diary():
+        from .diary import Diary
+        data = body(("day", "text"), ("day", "text"))
+        if not isinstance(data["day"], str) or not isinstance(data["text"], str):
+            raise ValueError("day and text must be strings")
+        receipt = Diary(store).write(identity(), data["day"], data["text"])
+        return response([{"type": "memory.receipt", "data": {k: v for k, v in receipt.items() if k != "version"}},
+                         Diary(store).block(identity(), data["day"], data["day"])])
+
+    @bp.route("/diary/<day>/history")
+    @authenticate
+    def diary_history(day):
+        from .diary import Diary
+        return jsonify({"day": day, "versions": Diary(store).history(identity(), day)})
+
+    @bp.route("/import/legacy", methods=["POST"])
+    @authenticate
+    def import_legacy():
+        # Path is server-configured like the other connectors; never client supplied.
+        if identity() != os.getenv("MEMORY_CONNECTOR_OWNER", "admin"):
+            raise KeyError("connector")
+        body(())
+        from .import_legacy import default_path, run
+        path = default_path()
+        if not path or not path.exists():
+            raise KeyError("legacy database (set MEMORY_LEGACY_DB)")
+        return response([{"type": "memory.receipt", "data": {k: v for k, v in run(store, identity(), path).items() if k != "failures"}}])
 
     @bp.route("/events", methods=["POST"])
     @authenticate

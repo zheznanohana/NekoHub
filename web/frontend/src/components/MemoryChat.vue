@@ -10,8 +10,13 @@
       <button @click="process">处理一条记忆</button>
       <button @click="sync('gotify')">同步 Gotify</button>
       <button @click="sync('github')">同步 GitHub</button>
+      <button @click="loadDiary">日记表</button>
+      <button v-if="status.legacy_import_available" @click="importLegacy">导入旧版数据</button>
+      <button @click="reindex">重建检索索引</button>
     </div>
-    <p class="hint">{{ status.llm_configured ? 'LLM 已配置' : 'LLM 未配置：可先用斜杠命令增删改查' }} · Agent 仅建议删除，确认权在你。</p>
+    <p class="hint">{{ status.llm_configured ? 'LLM 已配置' : 'LLM 未配置：可先用斜杠命令增删改查' }} ·
+      检索：{{ status.retrieval === 'hybrid' ? '关键词 + 语义（' + status.embed_model + '）' : '关键词 BM25（未配置向量模型，换个说法可能查不到）' }} ·
+      Agent 仅建议删除，确认权在你。</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <div class="messages" aria-live="polite">
       <article v-for="(message, mi) in messages" :key="mi" class="message">
@@ -48,6 +53,33 @@
               <tbody><tr v-for="row in block.rows" :key="row.id"><td v-for="column in block.columns" :key="column"><template v-if="column==='evidence_ids'"><button v-for="id in row.evidence_ids" :key="id" @click="openEvent(id)">打开原文 {{ id.slice(0,8) }}</button></template><template v-else>{{ Array.isArray(row[column]) ? row[column].join(', ') : row[column] }}</template></td></tr></tbody>
             </table></div>
             <div v-else><article v-for="row in block.rows" :key="row.id" class="card"><dl><template v-for="column in block.columns" :key="column"><dt>{{ column }}</dt><dd>{{ Array.isArray(row[column]) ? row[column].join(', ') : row[column] }}</dd></template></dl><button v-for="id in row.evidence_ids" :key="id" @click="openEvent(id)">打开原文 {{ id.slice(0,8) }}</button></article></div>
+          </div>
+          <div v-else-if="block.type === 'memory.diary'" class="diary">
+            <p class="hint">{{ block.scope }}</p>
+            <p v-if="!block.rows.length">还没有任何一天的记录。先导入数据，或直接写今天的日记。</p>
+            <div class="diary-split">
+              <div style="overflow:auto;max-height:420px">
+                <table><thead><tr><th>日期</th><th>日记</th><th>记录</th><th>来源</th></tr></thead>
+                  <tbody><tr v-for="row in block.rows" :key="row.day" :class="{picked: diaryDay===row.day}" @click="pickDay(row)">
+                    <td>{{ row.day }}</td><td>{{ row.text || '（未写）' }}</td>
+                    <td>{{ row.event_count }}</td><td>{{ row.sources.join(' / ') }}</td>
+                  </tr></tbody>
+                </table>
+              </div>
+              <div>
+                <label for="diary-day">日期</label>
+                <input id="diary-day" v-model="diaryDay" placeholder="YYYY-MM-DD" />
+                <label for="diary-text">我的日记</label>
+                <textarea id="diary-text" v-model="diaryText" rows="6" placeholder="写下这一天。你写的内容优先于自动摘要。" />
+                <button :disabled="busy || !diaryDay || !diaryText.trim()" @click="saveDiary">保存日记</button>
+                <template v-if="diaryRow(block)">
+                  <p class="hint">{{ diaryRow(block).version ? '第 ' + diaryRow(block).version + ' 版 · ' + (diaryRow(block).updated_at || '').slice(0,16) : '尚未写过' }} · 保存会保留上一版历史</p>
+                  <details v-if="diaryRow(block).summary"><summary>当日自动摘要（只读）</summary><p>{{ diaryRow(block).summary }}</p></details>
+                  <button v-for="id in diaryRow(block).event_ids.slice(0,6)" :key="id" @click="openEvent(id)">打开原文 {{ id.slice(0,8) }}</button>
+                </template>
+              </div>
+            </div>
+            <button @click="download(block)">导出 JSON</button>
           </div>
           <div v-else-if="block.type === 'memory.network'" class="graph">
             <p class="hint">{{ block.scope }}</p>
@@ -146,6 +178,13 @@ async function call(path, data) {
   const r=await fetch(base+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('token')},body:data===undefined?undefined:JSON.stringify(data)})
   const value=await r.json(); if(!r.ok) throw new Error(value.message || '请求失败'); return value
 }
+const diaryDay=ref(''), diaryText=ref('')
+function diaryRow(block){return block.rows.find(r=>r.day===diaryDay.value)}
+function pickDay(row){diaryDay.value=row.day;diaryText.value=row.text}
+async function loadDiary(){await operation(()=>call('/diary'))}
+async function saveDiary(){await operation(()=>call('/diary',{day:diaryDay.value,text:diaryText.value.trim()}))}
+async function importLegacy(){await operation(()=>call('/import/legacy',{}))}
+async function reindex(){await operation(()=>call('/reindex',{}))}
 async function refresh(){ status.value=await call('/status') }
 async function operation(fn){if(busy.value)return;busy.value=true;error.value='';try{const v=await fn();if(v?.kind==='chat.blocks')messages.value.push(v);await refresh()}catch(e){error.value=e.message}finally{busy.value=false}}
 async function send(value){const text=typeof value==='string'?value:input.value;if(!text.trim()||busy.value)return;messages.value.push({user:text});input.value='';await operation(()=>call('/chat',{schema_version:'1.0',message:text,view_context:{...viewContext,query:input.value||viewContext.query}}))}
@@ -174,5 +213,10 @@ svg{width:100%;max-height:460px}line{stroke:var(--border-color);stroke-width:2}c
 line.association{stroke-dasharray:6 4}line.evidence{stroke-dasharray:2 4;opacity:.6}
 .node{cursor:pointer}circle.level-raw{fill:var(--text-secondary)}circle.level-entity{fill:#7a5af5}
 circle.picked{stroke:var(--primary-color);stroke-width:4}
+.diary-split{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.diary-split{grid-template-columns:1fr}}
+.diary tbody tr{cursor:pointer}.diary tbody tr.picked{background:var(--bg-secondary,rgba(127,127,127,.14))}
+.diary input{box-sizing:border-box;width:100%;padding:9px;border:1px solid var(--border-color);background:var(--bg-primary);color:var(--text-primary);border-radius:7px;font:inherit}
+.diary label{display:block;margin:10px 0 4px;color:var(--text-secondary)}
 th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--border-color);min-width:90px;max-width:400px;overflow-wrap:anywhere}
 </style>

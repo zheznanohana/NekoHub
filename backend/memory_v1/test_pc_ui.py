@@ -29,6 +29,10 @@ BLOCKS = [
                 "period": "2026-09-12", "evidence_ids": ["e1"]}],
      "edges": [{"source": "e1", "target": "s1", "kind": "compresses", "label": "压缩汇总"}],
      "scope": "test"},
+    {"type": "memory.diary",
+     "rows": [{"day": "2026-03-01", "text": "第一天", "version": 1, "updated_at": "2026-03-01T10:00:00+00:00",
+               "event_count": 2, "event_ids": ["e1"], "sources": ["gotify"], "summary": "日摘要", "summary_id": "s1"}],
+     "scope": "test"},
     {"type": "memory.graph", "data": {"nodes": [{"id": "n1", "kind": "person", "label": "我", "aliases": []}], "facts": []}},
     {"type": "memory.receipt", "data": {"state": "applied"}},
 ]
@@ -52,9 +56,13 @@ class DesktopRenderTests(unittest.TestCase):
     def test_every_contract_block_renders(self):
         VALIDATOR.validate(envelope("test", BLOCKS))
         from ui_memory import MemoryPage
+        # Rendered one at a time: a total count would hide a block that draws nothing.
+        for block in BLOCKS:
+            page = MemoryPage()
+            page.render([block])
+            self.assertGreater(page.cards.count(), 0, block["type"] + " rendered no widget")
         page = MemoryPage()
         page.render(BLOCKS)
-        self.assertGreaterEqual(page.cards.count(), len(BLOCKS))
         # The network block is what gives the agent a real selection scope.
         self.assertEqual(page.view_context["visible_ids"], ["e1", "s1"])
         self.assertEqual(page.view_context["levels"], ["day", "raw"])

@@ -27,10 +27,12 @@ class MemoryPage(QWidget):
             button = QPushButton(label)
             button.clicked.connect(lambda checked=False, c=command: self.send(c))
             toolbar.addWidget(button)
+        button = QPushButton("日记表"); button.clicked.connect(lambda: self.call('/diary', None)); toolbar.addWidget(button)
         self.root.addLayout(toolbar)
         tools = QHBoxLayout()
         for label, path, payload in [('连接 / 队列','/status',None),('整理一条','/process',{}),
-                                     ('同步 GitHub','/sync/github',{}),('后台日报','/daily/latest',None)]:
+                                     ('同步 GitHub','/sync/github',{}),('后台日报','/daily/latest',None),
+                                     ('导入旧版数据','/import/legacy',{}),('重建检索索引','/reindex',{})]:
             button=QPushButton(label)
             button.clicked.connect(lambda checked=False,p=path,d=payload:self.call(p,d))
             tools.addWidget(button)
@@ -38,7 +40,7 @@ class MemoryPage(QWidget):
         button=QPushButton('数据类型');button.clicked.connect(self.show_catalog);tools.addWidget(button)
         self.root.addLayout(tools)
         filters=QHBoxLayout()
-        self.source_filter=QComboBox();self.source_filter.addItems(['','gotify','rss','imap','web3','github','manual','memory_agent'])
+        self.source_filter=QComboBox();self.source_filter.addItems(['','gotify','rss','imap','web3','github','manual','import','memory_agent'])
         self.level_filter=QComboBox();self.level_filter.addItems(['','raw','detail','day','week','month'])
         self.query=QLineEdit();self.query.setPlaceholderText('筛选内容；双击表格记录打开原文')
         filters.addWidget(self.source_filter);filters.addWidget(self.level_filter);filters.addWidget(self.query)
@@ -158,6 +160,14 @@ class MemoryPage(QWidget):
                 button = QPushButton("确认执行")
                 button.clicked.connect(lambda checked=False, aid=block["action_id"], b=button: self.call('/actions/'+aid+'/confirm', {}, lambda: b.setDisabled(True)))
                 self.cards.addWidget(button)
+            elif kind == "memory.diary":
+                from ui_memory_diary import MemoryDiary
+                diary=MemoryDiary(block)
+                diary.open_event.connect(lambda eid:self.call('/events/'+eid,None))
+                diary.export_requested.connect(self.export)
+                diary.save_requested.connect(lambda day,text:self.call('/diary',{'day':day,'text':text}))
+                diary.expand_summary.connect(lambda sid:self.send('/memory.expand '+json.dumps({'summary_id':sid})))
+                self.cards.addWidget(diary)
             elif kind == "memory.table":
                 from ui_memory_table import MemoryTable
                 table=MemoryTable(block)

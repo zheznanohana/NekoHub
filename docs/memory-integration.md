@@ -14,7 +14,7 @@
 
 输入 /chat：`{"schema_version":"1.0","message":"..."}`。
 输出：chat.blocks，严格 JSON Schema 见 backend/memory_v1/chat-blocks.schema.json。
-支持 text、memory.cards、memory.network、memory.graph、memory.summaries、memory.table、memory.action、memory.receipt。
+支持 text、memory.cards、memory.network、memory.graph、memory.summaries、memory.table、memory.diary、memory.action、memory.receipt。
 `/chat` 可附带 `view_context`（selected_ids / visible_ids / levels / query）；服务端只保留确实存在于当前图中的 ID，前端伪造的 ID 会被丢弃。
 模型不输出 HTML；Vue 与 PC 按类型渲染并转义文本。表格可以打开、查看、下载 JSON，支持横向字段与纵向记录模式。
 表格含原始记录、已确认事实、日/周/月摘要；source 字段用于区分实际导入的数据源，不为尚未接入的来源伪造数据。
@@ -36,11 +36,63 @@
 /memory.expand {"summary_id":"从回忆结果取得"}
 /memory.compress {"level":"day","period":"2026-09-12"}
 /memory.daily {}
+/memory.diary.read {"from":"2026-03-01","to":"2026-03-05","text":""}
+/memory.diary.write {"day":"2026-03-01","text":"这一天的记录"}
 ```
 
-自然语言聊天有最多 4 步的读取循环，可先摘要后原文，再回答并附来源。精确字段筛选由程序执行；当前文本检索为 SQLite 子串匹配，不是 embedding 语义搜索。
+自然语言聊天有最多 4 步的读取循环，可先摘要后原文，再回答并附来源。精确字段筛选由程序执行。
+
+## 检索（RAG）
+
+`backend/memory_v1/retrieval.py`。两层，第二层可选。
+
+**第一层：BM25，无外部依赖，默认开启。** SQLite FTS5，但两种现成分词器都不能用：
+`trigram` 永远匹配不到两字中文查询，`unicode61` 把整段汉字当作一个 token，
+查「群组」命中不了「在群组」。所以索引和查询两侧都把 CJK 切成一字一 token，
+查询时拼成短语匹配（`"群 组"`），既恢复子串语义又保留 BM25 排序；
+拉丁词整体保留并转小写，按前缀匹配。索引增量维护，跟随内容哈希与软删除。
+
+**第二层：向量，需要配置才开启。** 设置 `MEMORY_EMBED_BASE_URL` / `MEMORY_EMBED_MODEL`
+（任意 OpenAI 兼容 `/embeddings` 端点）后，向量与 BM25 结果用 RRF 融合。
+向量按 batch 增量生成，存在 `memory_vectors`，内容变了自动失效。
+**DeepSeek 目前没有 embeddings 接口（实测 404），所以语义层需要另配一个提供方。**
+未配置时只跑 BM25；提供方报错时自动降级为 BM25，不会让查询失败。
+`GET /status` 的 `retrieval` 字段（`lexical` / `hybrid`）告诉前端当前实际跑的是哪一层。
+
+实测对比（1059 条真实数据）：
+`群组` 从 0 → 9 条且相关项排第一；`下载` 0 → 24 条；`福利群` 0 → 4 条。
+仍然查不到的：`电报`→Telegram、`安装包`→apk。这类同义/跨语言改写只有向量层能解决，
+在配好 embeddings 之前它就是查不到——这一点不要当成已经做完。
 Agent 可以读取结构化表，不需要截图或 SQL 权限。写命令只生成待确认操作；模型没有 confirm 工具。
 用户点击确认是独立 HTTP 操作，绑定用户、一次性 ID、10 分钟有效期及原文版本哈希。
+
+## 日记表
+
+每天一行：你亲笔写的日记、当天记录条数与来源、该日自动摘要。只列出确实有记录或有日记的日期，不补空白天。
+读用 `GET /diary`（可带 from/to/text），写用 `POST /diary {"day","text"}`。PC 和 Web 都是左表右编辑器。
+
+- **你直接写是直接生效**（你就是作者）；**Agent 的 `memory.diary.write` 只生成待确认卡片**，确认后才写入。
+- 每次编辑保留上一版到 `memory_diary_history`，并把新版本作为一条 manual 记录发布，
+  所以日记内容可以被当作证据引用，改写也不会抹掉原来写过的话。
+- 日记优先于自动摘要：提示词里明确「用户亲笔，优先级高于自动摘要」。
+
+## 旧版数据导入
+
+旧版桌面端的 `nekohub.db`（扁平 `messages` 表）用 `backend/memory_v1/import_legacy.py` 导入：
+
+```
+python -m backend.memory_v1.import_legacy <旧 nekohub.db 路径>
+```
+
+设置 `MEMORY_LEGACY_DB` 后，PC 的「导入旧版数据」按钮与 Web 同名按钮直接调用 `POST /import/legacy`。
+路径由服务端环境变量提供，客户端不能指定路径，避免任意文件读取。
+
+导入规则：逐行原样复制为 `source.type=import`，不改写、不摘要、不丢弃；
+`external_id` 用旧自增 ID，所以重复导入幂等。安卓转发器放在正文首行的包名会提取到
+`content.fields.app_package`，`legacy_id / appid / priority` 一并进入 fields，正文只留标题与内容。
+
+一次性导入上千条会留下同样多的待处理任务，每条一次模型调用。
+`MEMORY_WORKER_BATCH`（默认 1）控制 worker 每 60 秒处理几条；导入后临时调高，之后调回。
 
 ## 分层图与删除边界
 

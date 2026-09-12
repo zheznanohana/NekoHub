@@ -117,9 +117,30 @@ class Store:
                 raise KeyError(event_id)
             return json.loads(row[0])
 
+    def index(self):
+        """Lazily built so a plain contract/store user never pays for FTS setup."""
+        if getattr(self, "_index", None) is None:
+            from .retrieval import Embeddings, Index
+            self._index = Index(self, Embeddings.from_env())
+        return self._index
+
     def search(self, owner, text, limit=30):
+        """Empty text means 'latest records'. Otherwise ranked; see retrieval.py."""
+        limit = min(max(limit, 1), 100)
+        columns = "id,text,occurred_at,source_type,content_hash"
+        if not (text or "").strip():
+            with self.db() as con:
+                return [dict(row) for row in con.execute(
+                    f"SELECT {columns} FROM memory_events WHERE owner_id=? AND deleted_at IS NULL ORDER BY received_at DESC LIMIT ?",
+                    (owner, limit))]
+        ranked, _mode = self.index().search(owner, text, limit)
+        if not ranked:
+            return []
         with self.db() as con:
-            return [dict(row) for row in con.execute("SELECT id,text,occurred_at,source_type,content_hash FROM memory_events WHERE owner_id=? AND deleted_at IS NULL AND instr(lower(text),lower(?))>0 ORDER BY received_at DESC LIMIT ?", (owner, text, min(max(limit, 1), 100)))]
+            found = {row["id"]: dict(row) for row in con.execute(
+                f"SELECT {columns} FROM memory_events WHERE owner_id=? AND deleted_at IS NULL AND id IN ({','.join('?' * len(ranked))})",
+                (owner, *ranked))}
+        return [found[event_id] for event_id in ranked if event_id in found]
 
     def prepare_action(self, owner, command):
         import time
@@ -151,6 +172,10 @@ class Store:
                 con.execute("UPDATE memory_events SET deleted_at=? WHERE owner_id=? AND id=?", (now(), owner, command["event_id"]))
                 con.execute("UPDATE memory_facts SET status='retracted',version=version+1 WHERE owner_id=? AND id IN (SELECT fact_id FROM memory_evidence WHERE owner_id=? AND event_id=?)", (owner, owner, command["event_id"]))
                 con.execute("UPDATE memory_jobs SET state='rejected' WHERE owner_id=? AND event_id=? AND state IN ('pending','review')", (owner, command["event_id"]))
+            if command["command"] == "memory.diary.write":
+                con.execute("UPDATE memory_actions SET state='applied' WHERE id=?", (action_id,))
+                con.execute("INSERT INTO memory_audit(owner_id,job_id,actor,result,created_at) VALUES(?,?,?,?,?)", (owner, action_id, "user:chat", packed({"command": command}), now()))
+                return {"state": "applied", "event_id": None, "command": command}
             event_id = None
             if command["command"] in ("memory.create", "memory.update"):
                 event_id = uuid.uuid4().hex

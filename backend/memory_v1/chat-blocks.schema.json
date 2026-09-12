@@ -1085,6 +1085,79 @@
             "additionalProperties": false,
             "properties": {
               "type": {
+                "const": "memory.diary"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "day": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "updated_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "event_count": {
+                      "type": "integer"
+                    },
+                    "event_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "summary_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "day",
+                    "text",
+                    "version",
+                    "updated_at",
+                    "event_count",
+                    "event_ids",
+                    "sources",
+                    "summary",
+                    "summary_id"
+                  ]
+                }
+              },
+              "scope": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "rows",
+              "scope"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
                 "const": "memory.graph"
               },
               "data": {
@@ -1282,6 +1355,57 @@
                     },
                     "required": [
                       "command"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.diary.read"
+                      },
+                      "from": {
+                        "type": "string",
+                        "maxLength": 10
+                      },
+                      "to": {
+                        "type": "string",
+                        "maxLength": 10
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "from",
+                      "to",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.diary.write"
+                      },
+                      "day": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 10
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "day",
+                      "text"
                     ]
                   },
                   {
@@ -1488,6 +1612,39 @@
                     "type": "string"
                   },
                   "imported": {
+                    "type": "integer"
+                  },
+                  "duplicate": {
+                    "type": "integer"
+                  },
+                  "failed": {
+                    "type": "integer"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "day": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer"
+                  },
+                  "indexed": {
+                    "type": "integer"
+                  },
+                  "dropped": {
+                    "type": "integer"
+                  },
+                  "pending": {
+                    "type": "integer"
+                  },
+                  "embed_state": {
+                    "type": "string"
+                  },
+                  "embed_embedded": {
+                    "type": "integer"
+                  },
+                  "embed_pending": {
                     "type": "integer"
                   },
                   "history_complete": {

@@ -16,8 +16,19 @@ def tick(store, owner, complete):
         from .gotify_puller import GotifyPuller
         try:GotifyPuller(store,owner,os.environ['MEMORY_GOTIFY_URL'],os.environ['MEMORY_GOTIFY_TOKEN']).tick()
         except Exception as exc:print(json.dumps({'pull':'failed','type':type(exc).__name__}),flush=True)
-    if complete is None:return {'state':'collecting_only'}
-    result = store.process_one(owner, MemoryAgent(complete), auto_apply=os.getenv('MEMORY_AUTO_APPLY','false').lower()=='true')
+    index=store.index()
+    index.sync(owner)
+    # Embedding is incremental and capped per tick; a bulk import fills in over time.
+    embedded=index.embed_pending(owner,batch=int(os.getenv('MEMORY_EMBED_BATCH','64') or 64))
+    if complete is None:return {'state':'collecting_only','embed':embedded['state']}
+    # A bulk import leaves thousands of jobs; one per minute would take days.
+    batch=max(1,min(int(os.getenv('MEMORY_WORKER_BATCH','1') or 1),200))
+    auto=os.getenv('MEMORY_AUTO_APPLY','false').lower()=='true'
+    result=None
+    for _ in range(batch):
+        step=store.process_one(owner, MemoryAgent(complete), auto_apply=auto)
+        if step is None:break
+        result=step
     rollups=Rollups(store)
     today=datetime.now(timezone.utc).date()
     periods=[('day',(today-timedelta(days=1)).isoformat()),
