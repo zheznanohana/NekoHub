@@ -97,36 +97,6 @@ class AiPage(QWidget):
         self.memory_results.scroll.hide()
         self.ai_manager.chat_blocks_ready.connect(self._on_blocks)
 
-        # 3. [完美极简重构]：用纯文本输入框替代 SpinBox
-        source_card = CardWidget()
-        s_lay = QHBoxLayout(source_card)
-        s_lay.setContentsMargins(15, 10, 15, 10)
-        s_lay.addWidget(StrongBodyLabel("带入背景数据(条数):"))
-        
-        def make_inline_pair(label_text, default_val, setting_key):
-            chk = CheckBox(label_text)
-            chk.setChecked(True)
-            # 使用普通的 LineEdit，拒绝箭头
-            sp = LineEdit()
-            sp.setFixedWidth(50) 
-            sp.setText(str(getattr(s, setting_key, default_val)))
-            sp.textChanged.connect(self._save_fine_limits)
-            return chk, sp
-
-        self.chk_gotify, self.sp_gotify = make_inline_pair("通知", 20, "ai_limit_gotify")
-        self.chk_rss, self.sp_rss = make_inline_pair("订阅", 10, "ai_limit_rss")
-        self.chk_imap, self.sp_imap = make_inline_pair("邮件", 10, "ai_limit_imap")
-        self.chk_web3, self.sp_web3 = make_inline_pair("链上", 20, "ai_limit_web3")
-
-        # 按顺序排列到同一行
-        for w in [self.chk_gotify, self.sp_gotify, self.chk_rss, self.sp_rss, self.chk_imap, self.sp_imap, self.chk_web3, self.sp_web3]:
-            s_lay.addWidget(w)
-            if isinstance(w, LineEdit):
-                s_lay.addSpacing(15)
-                
-        s_lay.addStretch(1)
-        root.addWidget(source_card)
-
         # 4. 输入区
         inp_lay = QHBoxLayout()
         self.input = TextEdit()
@@ -142,27 +112,6 @@ class AiPage(QWidget):
         root.addLayout(inp_lay)
 
         self._load_profiles()
-
-    def _save_fine_limits(self):
-        if self._is_loading: 
-            return
-        s = self.get_settings()
-        
-        # 安全转换：防止输入框为空或填入字母时报错
-        def safe_int(widget, default_val):
-            try:
-                val = int(widget.text().strip())
-                return val if val > 0 else default_val
-            except Exception:
-                return default_val
-
-        s.ai_limit_gotify = safe_int(self.sp_gotify, 20)
-        s.ai_limit_rss = safe_int(self.sp_rss, 10)
-        s.ai_limit_imap = safe_int(self.sp_imap, 10)
-        s.ai_limit_web3 = safe_int(self.sp_web3, 20)
-        
-        self.save_settings(s)
-        self.ai_manager.update_settings(s)
 
     def _load_profiles(self):
         self._is_loading = True
@@ -230,19 +179,15 @@ class AiPage(QWidget):
         self.btn_send.setEnabled(False)
         self.btn_send.setText("Wait..." if self.is_en else "稍等...")
         
-        domains = []
-        if self.chk_gotify.isChecked(): domains.append("gotify")
-        if self.chk_rss.isChecked(): domains.append("rss")
-        if self.chk_imap.isChecked(): domains.append("imap")
-        if self.chk_web3.isChecked(): domains.append("web3")
-        
+        # No source checkboxes: the agent retrieves from memory instead of being
+        # handed a fixed slab of the newest rows from whatever was ticked.
         self.ai_manager.view_context=dict(self.memory_results.view_context)
-        self.ai_manager.send_chat_async(text, domains)
+        self.ai_manager.send_chat_async(text, [])
 
     def _on_blocks(self, blocks):
-        if blocks:
-            self.memory_results.scroll.show()
-            self.memory_results.render(blocks)
+        # Retrieved records are context for the model, not screen furniture.
+        # The memory workbench page is where they are meant to be inspected.
+        pass
 
     def _on_reply(self, text):
         ai_label = "AI" if self.is_en else "答"

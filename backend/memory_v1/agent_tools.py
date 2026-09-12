@@ -16,6 +16,8 @@ EXTRA=[
  {'command':'web.search','fields':{'query':{'type':'string','minLength':1,'maxLength':300}}},
  {'command':'agent.improve.propose','fields':{'problem':{'type':'string','minLength':1,'maxLength':4000},'proposal':{'type':'string','minLength':1,'maxLength':8000},'test_plan':{'type':'string','minLength':1,'maxLength':4000}}},
  {'command':'agent.improve.list','fields':{}},
+ {'command':'connectors.list','fields':{}},
+ {'command':'connectors.run','fields':{'connector_id':{'type':'string','minLength':1,'maxLength':64}}},
 ]
 
 def specs():
@@ -77,6 +79,14 @@ def execute(store,owner,name,args):
     if command=='web.fetch':return fetch(args['url'])
     if command=='web.search':
         return fetch('https://html.duckduckgo.com/html/?q='+quote(args['query']))
+    if command=='connectors.list':
+        from .sources import Sources
+        # Secrets never appear here: list() returns has_secret, not the value.
+        return [{k:v for k,v in item.items() if k!='config'} | {'config':item['config']} for item in Sources(store).list(owner)]
+    if command=='connectors.run':
+        from .sources import Sources
+        result=Sources(store).run(owner,args['connector_id'])
+        return {k:v for k,v in result.items() if k in ('name','kind','imported','entries','error','feed')}
     if command.startswith('agent.improve.'):
         with store.db() as con:
             con.execute('CREATE TABLE IF NOT EXISTS agent_improvements(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL,proposal TEXT NOT NULL,state TEXT NOT NULL)')

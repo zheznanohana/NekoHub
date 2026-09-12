@@ -880,7 +880,8 @@
                       "enum": [
                         "compresses",
                         "association",
-                        "evidence"
+                        "evidence",
+                        "similar"
                       ]
                     },
                     "label": {

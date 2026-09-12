@@ -51,9 +51,9 @@ def make_blueprint(store, authenticate, identity, complete=None):
     @authenticate
     def status():
         from .import_legacy import default_path
-        from .retrieval import Embeddings
+        from .retrieval import embeddings_from_env
         legacy = default_path()
-        embeddings = Embeddings.from_env()
+        embeddings = embeddings_from_env()
         return jsonify({"llm_configured": bool(complete or (os.getenv("MEMORY_LLM_BASE_URL") and os.getenv("MEMORY_LLM_MODEL"))), "gotify_configured": bool(os.getenv("MEMORY_GOTIFY_URL") and os.getenv("MEMORY_GOTIFY_TOKEN")), "github_configured": bool(os.getenv("MEMORY_GITHUB_REPO")), "legacy_import_available": bool(legacy and legacy.exists()),
                         "retrieval": "hybrid" if embeddings else "lexical",
                         "embed_model": embeddings.model if embeddings else "",

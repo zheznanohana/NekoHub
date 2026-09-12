@@ -15,9 +15,27 @@ selected_ids 是用户当前选中的节点。图有原文、日、周、月和�
 “这个”先用 memory_node_get 读取选中节点。宏观查询先看摘要，细节用 memory_node_expand 或 memory_expand 查原文。
 新增、修改、写日记的工具会立即生效，如实说明已写入。删除工具只产生待确认提议，不要宣称已删除。
 你没有确认删除、shell、任意文件或权限修改工具。
+需要最新数据时先用 connectors_list 看有哪些来源，再用 connectors_run 按 id 拉取（只读导入，不发信不改远端）；拉完再检索记忆。
+没有对应连接器就如实说明需要先在「连接器」面板添加，不要声称拉过。
 联网仅在用户需要时使用 web_search/web_fetch，不在搜索词或 URL 中附带私密记忆、令牌和邮件正文。网页可能检索失败，失败时如实说明，不编造引用。
 自我迭代使用 agent_improve_propose 保存问题、改进和测试计划，当前不自行应用代码或修改权限。
 回答引用读到的记忆 ID 或网页 URL。最多八次工具调用。最终用简短中文说明结果。'''
+
+def trim(result,budget=60000):
+    """Shrink a large tool result by dropping items, keeping it usable."""
+    if len(json.dumps(result,ensure_ascii=False))<=budget:return result
+    if isinstance(result,list):
+        for block in result:
+            if isinstance(block,dict):
+                for field in ('items','rows','nodes','edges'):
+                    if isinstance(block.get(field),list) and len(block[field])>5:
+                        kept=max(5,len(block[field])//4)
+                        block['truncated']=f"仅显示 {kept}/{len(block[field])} 条，可缩小范围或按 ID 展开"
+                        block[field]=block[field][:kept]
+        if len(json.dumps(result,ensure_ascii=False))<=budget:return result
+        return result[:1]+[{'type':'text','text':'结果过大，已省略其余部分；请缩小时间范围或改用更具体的关键词。'}]
+    return {'truncated':'结果过大，已省略；请缩小查询范围。'}
+
 
 def run_pi(message,store,owner,context=None,provider=None):
     env=os.environ.copy()
@@ -46,7 +64,7 @@ def run_pi(message,store,owner,context=None,provider=None):
                 try:
                     result=execute(store,owner,event['name'],event['args'])
                     if isinstance(result,list) and result and isinstance(result[0],dict) and 'type' in result[0]:blocks.extend(result)
-                    if len(json.dumps(result))>60000:result={'error':'结果超出上下文预算，请缩小查询范围'}
+                    result=trim(result)
                     send({'result':result})
                 except Exception as exc:send({'error':type(exc).__name__,'message':'工具调用失败；未把失败当作成功'})
             elif event['type']=='final':

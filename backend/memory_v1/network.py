@@ -36,6 +36,15 @@ def network(store, owner):
         for evidence in fact['evidence']:
             if evidence['event_id'] in ids:
                 edges.append({'source':evidence['event_id'],'target':fact['subject_id'],'kind':'evidence','label':fact['predicate']})
+    # Similarity links are computed, not asserted: they say two records read
+    # alike, never that a fact connects them. The kind keeps that distinction
+    # visible to the agent, which is told not to treat them as evidence.
+    try:
+        for source,target,score in store.index().neighbours(owner,[n['id'] for n in nodes]):
+            edges.append({'source':source,'target':target,'kind':'similar',
+                'label':'语义相似 '+str(round(score*100))+'%'})
+    except Exception:
+        pass
     edges=list({(e['source'],e['target'],e['kind'],e['label']):e for e in edges}.values())
     return {'type':'memory.network','nodes':nodes,'edges':edges,
-        'scope':'最近 100 条原文、当前有效摘要和最多 100 条已确认事实；视图之外的证据可点选查看。实线向上汇总，虚线关联实体；层级不是生物脑结构。'}
+        'scope':'最近 100 条原文、当前有效摘要和最多 100 条已确认事实；视图之外的证据可点选查看。compresses 向上汇总，association 是已确认实体关系，evidence 指向原文，similar 只是向量相似度（不是断言的事实关系）。'}

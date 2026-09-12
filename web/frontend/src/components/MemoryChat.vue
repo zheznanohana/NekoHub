@@ -107,7 +107,7 @@
                 <text v-if="showLabels" :x="point.x" :y="point.y + point.r + 12" text-anchor="middle">{{ point.label.slice(0,14) }}</text>
               </g>
             </svg>
-            <p class="hint">实线：下层压缩成上层摘要 · 虚线：实体之间的已确认关系 · 点线：事实指向原文证据。
+            <p class="hint">实线：压缩汇总 · 虚线：已确认实体关系 · 点线：原文证据 · 点划线：向量语义相似（算出来的像，不是断言的关系）。
               拖节点、滚轮缩放、拖空白平移。位置只是画法，连接才是数据。</p>
             <article v-if="picked(block)" class="card">
               <strong>{{ LEVEL_NAME[picked(block).level] || picked(block).level }} · {{ picked(block).label }}</strong>
@@ -199,7 +199,7 @@ const input=ref(''), busy=ref(false), error=ref(''), messages=ref([]), status=re
 const tableMode=ref('horizontal'), selected=ref(''), showLabels=ref(true)
 const viewContext=reactive({selected_ids:[],visible_ids:[],levels:[],query:''})
 const LEVEL_NAME={raw:'原始记录',day:'日记忆',week:'周记忆',month:'月记忆',entity:'关联实体'}
-const EDGE_NAME={compresses:'压缩汇总',association:'实体关联',evidence:'原文证据'}
+const EDGE_NAME={compresses:'压缩汇总',association:'实体关联',evidence:'原文证据',similar:'语义相似'}
 
 // One live force simulation per rendered network block, keyed by identity so a
 // re-render does not restart the layout the user is already looking at.
@@ -391,6 +391,7 @@ svg.canvas{width:100%;height:min(62vh,520px);max-height:none;background:#0f1a24;
 svg.canvas line{stroke:#3f5f70;stroke-width:1.4}
 svg.canvas line.association{stroke:#7a6bab;stroke-dasharray:6 4}
 svg.canvas line.evidence{stroke:#3f5f70;stroke-dasharray:2 4;opacity:.55}
+svg.canvas line.similar{stroke:#5c8f6f;stroke-dasharray:7 3 2 3;opacity:.5;stroke-width:1}
 svg.canvas line.lit{stroke:#8fe6cc;stroke-width:2.6;opacity:1}
 svg.canvas text{fill:#c7d7e6;font-size:11px;pointer-events:none;user-select:none}
 .node{cursor:pointer}.node circle{stroke:#0f1a24}

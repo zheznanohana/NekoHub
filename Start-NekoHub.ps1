@@ -17,6 +17,13 @@ $env:MEMORY_SERVICE_URL = 'http://127.0.0.1:18081'
 $env:MEMORY_DB_PATH = Join-Path $State 'memory.db'
 $env:MEMORY_CONNECTOR_OWNER = 'admin'
 $env:MEMORY_AGENT_RUNTIME = 'pi'
+# Local ONNX embeddings: no key, no network at query time, nothing leaves the machine.
+# bge-small-zh-v1.5 measured best on this corpus (5/6 vs 3/6) at a ninth of jina's cost.
+$env:MEMORY_EMBED_BACKEND = 'local'
+$env:MEMORY_EMBED_MODEL = 'BAAI/bge-small-zh-v1.5'
+$env:MEMORY_EMBED_CACHE = Join-Path $State 'embed-cache'
+$env:HF_HUB_DISABLE_PROGRESS_BARS = '1'
+$env:HF_HUB_DISABLE_SYMLINKS_WARNING = '1'
 $env:MEMORY_GITHUB_REPO = 'zheznanohana/NekoHub'
 # One-click import of the pre-memory desktop database, when a copy is present.
 $LegacyDb = Join-Path $State 'legacy-nekohub.db'

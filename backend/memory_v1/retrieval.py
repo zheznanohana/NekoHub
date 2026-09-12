@@ -95,6 +95,46 @@ def fuse(*rankings):
     return sorted(scores, key=lambda event_id: -scores[event_id])
 
 
+class LocalEmbeddings:
+    """On-device ONNX embeddings. No key, no network at query time, no data leaves.
+
+    The model is loaded on first use rather than at import, so a service that
+    never runs a semantic query never pays the load, and a missing model file
+    surfaces as a degraded search instead of a failed startup.
+    """
+
+    def __init__(self, model, cache_dir=None):
+        self.model = model
+        self.cache_dir = cache_dir or os.getenv("MEMORY_EMBED_CACHE") or None
+        self._encoder = None
+
+    def encoder(self):
+        if self._encoder is None:
+            from fastembed import TextEmbedding
+            self._encoder = TextEmbedding(model_name=self.model, cache_dir=self.cache_dir)
+        return self._encoder
+
+    def embed(self, texts):
+        try:
+            vectors = list(self.encoder().embed([t[:6000] for t in texts]))
+        except Exception as exc:
+            raise RuntimeError("local embedding failure: " + type(exc).__name__) from None
+        if len(vectors) != len(texts):
+            raise RuntimeError("local embedder returned the wrong number of vectors")
+        return [normalise(vector.tolist()) for vector in vectors]
+
+
+def embeddings_from_env():
+    """Local model, remote endpoint, or nothing at all — in that order of preference."""
+    model = os.getenv("MEMORY_EMBED_MODEL")
+    if not model:
+        return None
+    backend = (os.getenv("MEMORY_EMBED_BACKEND") or "").strip().lower()
+    if backend == "local" or (not backend and not os.getenv("MEMORY_EMBED_BASE_URL")):
+        return LocalEmbeddings(model)
+    return Embeddings.from_env()
+
+
 class Embeddings:
     """OpenAI-compatible /embeddings adapter. Never constructed unless configured."""
 
@@ -229,6 +269,34 @@ class Index:
                                (owner, self.embeddings.model)).fetchall()
         scored = sorted(((dot(query, unpack(blob)), event_id) for event_id, blob in rows), reverse=True)
         return [event_id for _, event_id in scored[:limit]]
+
+    def neighbours(self, owner, ids, top_k=3, threshold=0.62):
+        """Nearest vector neighbours among `ids`, for drawing similarity links.
+
+        Scoped to the ids already on screen so the cost stays quadratic in the
+        visible graph, not in the whole store. Returns (a, b, score) with a < b
+        so each undirected pair appears once.
+        """
+        if not self.embeddings or len(ids) < 2:
+            return []
+        wanted = set(ids)
+        with self.store.db() as con:
+            rows = [(r[0], unpack(r[1])) for r in con.execute(
+                "SELECT event_id,vector FROM memory_vectors WHERE owner_id=? AND model=?",
+                (owner, self.embeddings.model)) if r[0] in wanted]
+        pairs = {}
+        for i, (a, va) in enumerate(rows):
+            scored = []
+            for j, (b, vb) in enumerate(rows):
+                if i == j:
+                    continue
+                score = dot(va, vb)
+                if score >= threshold:
+                    scored.append((score, b))
+            for score, b in sorted(scored, reverse=True)[:top_k]:
+                key = (a, b) if a < b else (b, a)
+                pairs[key] = max(pairs.get(key, 0.0), score)
+        return [(a, b, score) for (a, b), score in sorted(pairs.items(), key=lambda kv: -kv[1])]
 
     def search(self, owner, text, limit=30):
         """Returns (event_ids in rank order, mode). An empty query is the caller's job."""

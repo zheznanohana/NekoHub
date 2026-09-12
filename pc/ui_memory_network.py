@@ -25,8 +25,8 @@ LEVEL_COLOR = {"month": "#f0a35a", "week": "#e8c15c", "day": "#6fc4a8",
                "entity": "#a08ae8", "raw": "#6f92b8"}
 LEVEL_NAME = {"month": "月记忆", "week": "周记忆", "day": "日记忆",
               "entity": "关联实体", "raw": "原始记录"}
-EDGE_COLOR = {"compresses": "#4f7f93", "association": "#7a6bab", "evidence": "#3f5f70"}
-EDGE_NAME = {"compresses": "压缩汇总", "association": "实体关联", "evidence": "原文证据"}
+EDGE_COLOR = {"compresses": "#4f7f93", "association": "#7a6bab", "evidence": "#3f5f70", "similar": "#5c8f6f"}
+EDGE_NAME = {"compresses": "压缩汇总", "association": "实体关联", "evidence": "原文证据", "similar": "语义相似"}
 BACKGROUND = "#0f1a24"
 
 
@@ -153,6 +153,9 @@ class MemoryNetwork(QWidget):
                 pen.setStyle(Qt.DashLine)
             elif edge["kind"] == "evidence":
                 pen.setStyle(Qt.DotLine)
+            elif edge["kind"] == "similar":
+                pen.setStyle(Qt.DashDotLine)
+                pen.setWidthF(1.0)
             line = self.scene.addLine(a[0], a[1], b[0], b[1], pen)
             line.setToolTip(f"{EDGE_NAME.get(edge['kind'], edge['kind'])}：{edge['label']}")
             line.setZValue(-1)

@@ -120,8 +120,8 @@ class Store:
     def index(self):
         """Lazily built so a plain contract/store user never pays for FTS setup."""
         if getattr(self, "_index", None) is None:
-            from .retrieval import Embeddings, Index
-            self._index = Index(self, Embeddings.from_env())
+            from .retrieval import Index, embeddings_from_env
+            self._index = Index(self, embeddings_from_env())
         return self._index
 
     def search(self, owner, text, limit=30):

@@ -23,7 +23,7 @@ DIARY_ROW=obj({"day":S,"text":S,"version":N,"updated_at":{"type":["string","null
 TABLE=block("memory.table",{"columns":{"const":["id","level","source","subject","relation","content","period","status","parent_ids","child_ids","evidence_ids","fields"]},"rows":array(ROW),"scope":S})
 BLOCKS=[block("text",{"text":S}), block("memory.cards",{"items":array(CARD)}),
         block("memory.network",{"nodes":array(obj({"id":S,"kind":S,"level":{"enum":["raw","day","week","month","entity"]},"label":S,"text":S,"period":S,"evidence_ids":IDS,"tier":S},["id","kind","level","label","text","period","evidence_ids"])),
-              "edges":array(obj({"source":S,"target":S,"kind":{"enum":["compresses","association","evidence"]},"label":S})),"scope":S}),
+              "edges":array(obj({"source":S,"target":S,"kind":{"enum":["compresses","association","evidence","similar"]},"label":S})),"scope":S}),
         block("memory.summaries",{"items":array(SUMMARY)}), TABLE,
         block("memory.diary",{"rows":array(DIARY_ROW),"scope":S}),
         block("memory.graph",{"data":obj({"nodes":array({"$ref":"#/$defs/node"}),"facts":array({"$ref":"#/$defs/fact"})})}),
