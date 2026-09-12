@@ -49,23 +49,25 @@ class ServiceTests(unittest.TestCase):
         response=self.post('/chat',{"schema_version":"1.0","message":"/memory.export {}"})
         self.assertEqual(response.status_code,200,response.json);VALIDATOR.validate(response.json)
 
-    def test_chat_crud_confirmation(self):
+    def test_writes_apply_at_once_and_only_deletion_waits(self):
+        """Policy: deletion is the single command that needs a click."""
         def chat(cmd):return self.post('/chat',{"schema_version":"1.0","message":cmd})
         response=chat('/memory.create {"text":"hello"}')
-        action=response.json['blocks'][0]['action_id']
-        self.assertEqual(self.store.search('admin',''),[])
-        response=self.post('/actions/'+action+'/confirm',{})
-        self.assertEqual(response.status_code,200,response.json)
-        self.assertEqual(self.post('/actions/'+action+'/confirm',{}).status_code,409)
+        self.assertEqual([b['type'] for b in response.json['blocks']],['text','memory.receipt'])
+        self.assertEqual(len(self.store.search('admin','hello')),1)
         event=self.store.search('admin','hello')[0]
         response=chat('/memory.update '+json.dumps({'event_id':event['id'],'text':'changed'}))
-        self.assertEqual(self.post('/actions/'+response.json['blocks'][0]['action_id']+'/confirm',{}).status_code,200)
+        self.assertNotIn('memory.action',[b['type'] for b in response.json['blocks']])
         self.assertEqual(self.store.search('admin','hello'),[])
+        self.assertEqual(len(self.store.search('admin','changed')),1)
         event=self.store.search('admin','changed')[0]
         response=chat('/memory.delete '+json.dumps({'event_id':event['id']}))
-        self.assertEqual(len(self.store.search('admin','changed')),1)
-        self.assertEqual(self.post('/actions/'+response.json['blocks'][0]['action_id']+'/confirm',{}).status_code,200)
+        block=response.json['blocks'][0]
+        self.assertEqual(block['type'],'memory.action')
+        self.assertEqual(len(self.store.search('admin','changed')),1)   # still there until confirmed
+        self.assertEqual(self.post('/actions/'+block['action_id']+'/confirm',{}).status_code,200)
         self.assertEqual(self.store.search('admin','changed'),[])
+        self.assertEqual(self.post('/actions/'+block['action_id']+'/confirm',{}).status_code,409)
 
     def test_source_conflict(self):
         self.ingest(); doc=deepcopy(INGEST);doc['content']['text']='changed'

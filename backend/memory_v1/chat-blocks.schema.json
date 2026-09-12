@@ -848,6 +848,9 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "tier": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -1646,6 +1649,30 @@
                   },
                   "embed_pending": {
                     "type": "integer"
+                  },
+                  "graded": {
+                    "type": "integer"
+                  },
+                  "changed": {
+                    "type": "integer"
+                  },
+                  "merge_suggestions": {
+                    "type": "integer"
+                  },
+                  "entries": {
+                    "type": "integer"
+                  },
+                  "feed": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "type": "string"
                   },
                   "history_complete": {
                     "type": "boolean"

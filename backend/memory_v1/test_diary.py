@@ -69,17 +69,21 @@ class DiaryTests(unittest.TestCase):
         self.assertEqual([r["day"] for r in self.diary.rows("admin", text="第一天")], ["2026-03-01"])
         VALIDATOR.validate(envelope("t", [self.diary.block("admin")]))
 
-    def test_agent_diary_write_only_proposes(self):
+    def test_agent_diary_write_applies_at_once(self):
         command = {"command": "memory.diary.write", "day": "2026-03-01", "text": "模型写的"}
         COMMAND_VALIDATOR.validate(command)
         blocks = render_command(self.store, "admin", command)
-        self.assertEqual(blocks[0]["type"], "memory.action")
-        self.assertEqual(self.diary.rows("admin"), [])
-        result = self.store.confirm_action("admin", blocks[0]["action_id"])
-        self.assertEqual(result["command"], command)
-        # Applying is the API layer's job, outside the action transaction.
-        self.diary.write("admin", command["day"], command["text"])
+        self.assertEqual([b["type"] for b in blocks], ["text", "memory.receipt"])
+        self.assertEqual(blocks[1]["data"]["state"], "saved")
         self.assertEqual(self.diary.rows("admin")[0]["text"], "模型写的")
+
+    def test_agent_deletion_still_waits_for_a_click(self):
+        event_id = self.diary.write("admin", "2026-03-02", "先写一条")["event_id"]
+        blocks = render_command(self.store, "admin", {"command": "memory.delete", "event_id": event_id})
+        self.assertEqual(blocks[0]["type"], "memory.action")
+        self.assertEqual(len(self.store.search("admin", "先写一条")), 1)
+        self.store.confirm_action("admin", blocks[0]["action_id"])
+        self.assertEqual(self.store.search("admin", "先写一条"), [])
         with self.assertRaises(Conflict):
             self.store.confirm_action("admin", blocks[0]["action_id"])
 
@@ -111,13 +115,23 @@ class DiaryServiceTests(unittest.TestCase):
         history = self.client.get("/api/memory/v1/diary/2026-03-01/history", headers=self.headers)
         self.assertEqual(history.json["versions"], [])
 
-    def test_confirming_an_agent_proposal_writes_the_entry(self):
-        blocks = render_command(self.store, "admin", {"command": "memory.diary.write", "day": "2026-03-02", "text": "模型建议的一行"})
-        response = self.post("/actions/" + blocks[0]["action_id"] + "/confirm", {})
+    def test_agent_diary_write_through_chat_takes_effect(self):
+        response = self.post("/chat", {"schema_version": "1.0",
+            "message": '/memory.diary.write {"day":"2026-03-02","text":"模型写的一行"}'})
         self.assertEqual(response.status_code, 200, response.json)
         VALIDATOR.validate(response.json)
         self.assertEqual(response.json["blocks"][1]["data"]["state"], "saved")
-        self.assertEqual(Diary(self.store).rows("admin")[0]["text"], "模型建议的一行")
+        self.assertEqual(Diary(self.store).rows("admin")[0]["text"], "模型写的一行")
+
+    def test_a_deletion_through_chat_still_needs_the_confirm_endpoint(self):
+        event_id = Diary(self.store).write("admin", "2026-03-03", "要删掉的一行")["event_id"]
+        response = self.post("/chat", {"schema_version": "1.0",
+            "message": '/memory.delete {"event_id":"' + event_id + '"}'})
+        block = response.json["blocks"][0]
+        self.assertEqual(block["type"], "memory.action")
+        self.assertEqual(len(self.store.search("admin", "要删掉的一行")), 1)
+        self.assertEqual(self.post("/actions/" + block["action_id"] + "/confirm", {}).status_code, 200)
+        self.assertEqual(self.store.search("admin", "要删掉的一行"), [])
 
     def test_rejects_unknown_fields_and_bad_days(self):
         self.assertEqual(self.post("/diary", {"day": "2026-03-01", "text": "x", "owner": "someone"}).status_code, 400)

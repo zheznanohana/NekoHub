@@ -28,6 +28,7 @@ class MemoryPage(QWidget):
             button.clicked.connect(lambda checked=False, c=command: self.send(c))
             toolbar.addWidget(button)
         button = QPushButton("日记表"); button.clicked.connect(lambda: self.call('/diary', None)); toolbar.addWidget(button)
+        button = QPushButton("连接器"); button.clicked.connect(lambda: self.call('/connectors', None)); toolbar.addWidget(button)
         self.root.addLayout(toolbar)
         tools = QHBoxLayout()
         for label, path, payload in [('连接 / 队列','/status',None),('整理一条','/process',{}),
@@ -78,6 +79,8 @@ class MemoryPage(QWidget):
                 value = json.loads(bytes(reply.readAll()))
                 if reply.attribute(QNetworkRequest.HttpStatusCodeAttribute) not in (200,202):
                     self.status.setText(value.get('message','请求失败'));return
+                if path == '/connectors':
+                    self.show_connectors(value);self.status.setText('连接器已刷新');return
                 if path == '/status':
                     self.text('连接配置：'+json.dumps({k:v for k,v in value.items() if k!='jobs'},ensure_ascii=False))
                     for job in value.get('jobs',[]):
@@ -104,6 +107,24 @@ class MemoryPage(QWidget):
                 reply.deleteLater()
                 if settled: settled()
         reply.finished.connect(finished)
+
+    def show_connectors(self, data):
+        from ui_memory_connectors import MemoryConnectors
+        panel = MemoryConnectors(data)
+        panel.add_requested.connect(lambda payload: self.call('/connectors', payload, lambda: self.call('/connectors', None)))
+        panel.run_requested.connect(lambda cid: self.call('/connectors/'+cid+'/run', {}, lambda: self.call('/connectors', None)))
+        panel.toggle_requested.connect(lambda cid, on: self.call('/connectors/'+cid, {'enabled': on}, lambda: self.call('/connectors', None)))
+        panel.remove_requested.connect(lambda cid: self.delete('/connectors/'+cid))
+        panel.refresh_requested.connect(lambda: self.call('/connectors', None))
+        self.cards.addWidget(panel)
+
+    def delete(self, path):
+        base = os.getenv("MEMORY_SERVICE_URL", "http://127.0.0.1:18081").rstrip("/")
+        request = QNetworkRequest(QUrl(base+"/api/memory/v1"+path))
+        request.setRawHeader(b"Authorization", ("Bearer "+os.getenv("MEMORY_SERVICE_TOKEN", "")).encode())
+        request.setAttribute(QNetworkRequest.RedirectPolicyAttribute, QNetworkRequest.ManualRedirectPolicy)
+        reply = self.net.deleteResource(request)
+        reply.finished.connect(lambda: (reply.deleteLater(), self.call('/connectors', None)))
 
     def show_catalog(self):
         from memory_sources import CATALOG

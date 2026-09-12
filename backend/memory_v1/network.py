@@ -1,4 +1,5 @@
 """Deterministic, evidence-linked multiscale network; never invent edges."""
+from .curate import current_tiers
 from .rollup import Rollups
 
 
@@ -16,8 +17,10 @@ def network(store, owner):
             'label':summary['period'],'text':summary['summary'],'period':summary['period'],
             'evidence_ids':summary['event_ids']})
     graph=store.graph(owner,100)
+    tiers=current_tiers(store,owner)
     for node in graph['nodes']:
         nodes.append({'id':node['id'],'kind':node['kind'],'level':'entity','label':node['label'],
+            'tier':tiers.get(node['id'],{}).get('tier','') ,
             'text':node['label'],'period':'','evidence_ids':list(dict.fromkeys(e['event_id'] for f in graph['facts'] if f['subject_id']==node['id'] for e in f['evidence']))})
     ids={n['id'] for n in nodes}
     for summary in summaries:

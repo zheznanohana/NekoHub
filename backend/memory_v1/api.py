@@ -112,6 +112,45 @@ def make_blueprint(store, authenticate, identity, complete=None):
             result = Diary(store).write(identity(), command["day"], command["text"])
         return response([{"type": "text", "text": "操作已执行"}, {"type": "memory.receipt", "data": result}])
 
+    @bp.route("/connectors")
+    @authenticate
+    def connectors():
+        from .sources import Sources, describe
+        # Secrets are write-only: the listing returns has_secret, never the value.
+        return jsonify({"kinds": describe(), "items": Sources(store).list(identity())})
+
+    @bp.route("/connectors", methods=["POST"])
+    @authenticate
+    def add_connector():
+        from .sources import Sources
+        data = body(("kind", "config", "secret", "name"), ("kind", "config"))
+        if not isinstance(data["kind"], str) or not isinstance(data["config"], dict):
+            raise ValueError("kind and config required")
+        if not isinstance(data.get("secret", ""), str) or not isinstance(data.get("name", ""), str):
+            raise ValueError("secret and name must be strings")
+        receipt = Sources(store).add(identity(), data["kind"], data["config"], data.get("secret", ""), data.get("name", ""))
+        return response([{"type": "memory.receipt", "data": {k: v for k, v in receipt.items() if k in ("state", "id")}}])
+
+    @bp.route("/connectors/<connector_id>", methods=["POST", "DELETE"])
+    @authenticate
+    def change_connector(connector_id):
+        from .sources import Sources
+        sources = Sources(store)
+        if request.method == "DELETE":
+            return response([{"type": "memory.receipt", "data": sources.remove(identity(), connector_id)}])
+        data = body(("enabled",), ("enabled",))
+        if type(data["enabled"]) is not bool:
+            raise ValueError("enabled must be boolean")
+        return response([{"type": "memory.receipt", "data": sources.set_enabled(identity(), connector_id, data["enabled"])}])
+
+    @bp.route("/connectors/<connector_id>/run", methods=["POST"])
+    @authenticate
+    def run_connector(connector_id):
+        from .sources import Sources
+        body(())
+        result = Sources(store).run(identity(), connector_id)
+        return response([{"type": "memory.receipt", "data": {k: v for k, v in result.items() if k in ("imported", "id", "state", "reason")}}])
+
     @bp.route("/reindex", methods=["POST"])
     @authenticate
     def reindex():

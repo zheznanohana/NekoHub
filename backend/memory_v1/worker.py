@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from .agent import ChatCompletions, MemoryAgent
+from .curate import curate
 from .store import Store, now, packed
 from .rollup import Rollups
 from .daily import report
@@ -20,6 +21,11 @@ def tick(store, owner, complete):
     index.sync(owner)
     # Embedding is incremental and capped per tick; a bulk import fills in over time.
     embedded=index.embed_pending(owner,batch=int(os.getenv('MEMORY_EMBED_BATCH','64') or 64))
+    from .sources import Sources
+    try:
+        pulled=Sources(store).run_enabled(owner)
+        if pulled:print(json.dumps({'connectors':[{k:v for k,v in p.items() if k in ('name','imported','error')} for p in pulled]},ensure_ascii=False),flush=True)
+    except Exception as exc:print(json.dumps({'connectors':'failed','type':type(exc).__name__}),flush=True)
     if complete is None:return {'state':'collecting_only','embed':embedded['state']}
     # A bulk import leaves thousands of jobs; one per minute would take days.
     batch=max(1,min(int(os.getenv('MEMORY_WORKER_BATCH','1') or 1),200))
@@ -41,7 +47,13 @@ def tick(store, owner, complete):
         con.execute('CREATE TABLE IF NOT EXISTS memory_reports(owner_id TEXT NOT NULL,day TEXT NOT NULL,blocks TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(owner_id,day))')
         existing=con.execute('SELECT 1 FROM memory_reports WHERE owner_id=? AND day=?',(owner,today.isoformat())).fetchone()
     if not existing:
-        blocks=report(store,owner,complete)
+        curation=[]
+        try:
+            receipt,curation=curate(store,owner,complete)
+            print(json.dumps({'curate':receipt}),flush=True)
+        except Exception as exc:
+            curation=[{'type':'text','text':'今日记忆整理未完成（'+type(exc).__name__+'）；已有分层保持不变。'}]
+        blocks=curation+report(store,owner,complete)
         with store.db() as con:
             con.execute('INSERT OR IGNORE INTO memory_reports VALUES(?,?,?,?)',(owner,today.isoformat(),packed(blocks),now()))
     return result
