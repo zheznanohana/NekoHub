@@ -112,6 +112,17 @@ def make_blueprint(store, authenticate, identity, complete=None):
             result = Diary(store).write(identity(), command["day"], command["text"])
         return response([{"type": "text", "text": "操作已执行"}, {"type": "memory.receipt", "data": result}])
 
+    @bp.route("/backfill", methods=["POST"])
+    @authenticate
+    def backfill():
+        data = body(("limit",))
+        limit = data.get("limit", 6)
+        if type(limit) is not int or not 1 <= limit <= 40:
+            raise ValueError("limit must be 1-40")
+        result = Rollups(store).backfill(identity(), model, limit)
+        return response([{"type": "text", "text": "已补齐 " + str(len(result["periods"])) + " 个时间段，还剩 " + str(result["remaining"]) + " 个。"},
+                         {"type": "memory.receipt", "data": {"state": result["state"], "pending": result["remaining"]}}])
+
     @bp.route("/connectors")
     @authenticate
     def connectors():

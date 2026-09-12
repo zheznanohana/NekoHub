@@ -23,13 +23,25 @@ class Feed:
 class ValidationTests(unittest.TestCase):
     def test_kinds_are_described_without_any_user_data(self):
         described = describe()
-        self.assertEqual({k["kind"] for k in described}, {"gotify", "github", "rss"})
+        self.assertEqual({k["kind"] for k in described}, {"gotify", "github", "rss", "imap", "web3"})
+        for spec in described:
+            self.assertTrue(spec["fields"] and spec["note"], spec["kind"])
         self.assertNotIn("secret_value", json.dumps(described))
 
     def test_rejects_bad_urls_repos_and_unknown_fields(self):
         for kind, config in [("gotify", {"url": "ftp://x"}), ("gotify", {"url": ""}),
                              ("github", {"repo": "not-a-repo"}), ("rss", {"url": "javascript:alert(1)"}),
                              ("gotify", {"url": "http://a", "extra": "x"}), ("nope", {})]:
+            with self.assertRaises(ValueError, msg=f"{kind} {config}"):
+                check(kind, dict(config))
+
+    def test_credential_bearing_kinds_validate_their_own_fields(self):
+        self.assertEqual(check("imap", {"host": "imap.qq.com", "user": "a@qq.com", "port": "993"})["port"], "993")
+        self.assertEqual(check("web3", {"address": "0x" + "a" * 40, "chain": "Polygon"})["chain"], "Polygon")
+        for kind, config in [("imap", {"host": "not a host!", "user": "a@b.c"}),
+                             ("imap", {"host": "imap.qq.com", "user": "a@b.c", "port": "99999"}),
+                             ("web3", {"address": "0xshort"}),
+                             ("web3", {"address": "0x" + "a" * 40, "chain": "Dogechain"})]:
             with self.assertRaises(ValueError, msg=f"{kind} {config}"):
                 check(kind, dict(config))
 

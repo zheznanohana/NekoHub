@@ -189,12 +189,12 @@ class WorkerBatchTests(unittest.TestCase):
                 calls.append(owner)
                 return None if len(calls) > 3 else {"job_id": str(len(calls)), "state": "skipped"}
 
-            with patch.object(store, "process_one", process_one),                  patch.dict("os.environ", {"MEMORY_WORKER_BATCH": "10"}),                  patch.object(worker, "Rollups", lambda s: type("R", (), {"summarize": lambda *a: None})()),                  patch.object(worker, "report", lambda *a: [{"type": "text", "text": "x"}]):
+            with patch.object(store, "process_one", process_one),                  patch.dict("os.environ", {"MEMORY_WORKER_BATCH": "10"}),                  patch.object(worker, "Rollups", lambda s: type("R", (), {"summarize": lambda *a: None, "backfill": lambda *a: {"periods": []}})()),                  patch.object(worker, "report", lambda *a: [{"type": "text", "text": "x"}]):
                 worker.tick(store, "admin", lambda messages: "{}")
             self.assertEqual(len(calls), 4, "should stop on the first empty queue, not retry")
 
             calls.clear()
-            with patch.object(store, "process_one", lambda *a, **k: (calls.append(1), {"state": "review"})[1]),                  patch.dict("os.environ", {"MEMORY_WORKER_BATCH": "5"}),                  patch.object(worker, "Rollups", lambda s: type("R", (), {"summarize": lambda *a: None})()),                  patch.object(worker, "report", lambda *a: [{"type": "text", "text": "x"}]):
+            with patch.object(store, "process_one", lambda *a, **k: (calls.append(1), {"state": "review"})[1]),                  patch.dict("os.environ", {"MEMORY_WORKER_BATCH": "5"}),                  patch.object(worker, "Rollups", lambda s: type("R", (), {"summarize": lambda *a: None, "backfill": lambda *a: {"periods": []}})()),                  patch.object(worker, "report", lambda *a: [{"type": "text", "text": "x"}]):
                 worker.tick(store, "admin", lambda messages: "{}")
             self.assertEqual(len(calls), 5)
 

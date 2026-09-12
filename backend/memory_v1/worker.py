@@ -43,6 +43,9 @@ def tick(store, owner, complete):
     # Each period is content-hashed; unchanged sources cause zero model calls.
     for level,period in periods:
         rollups.summarize(owner,level,period,complete)
+    # Imported history is older than 'yesterday', so close its gaps a few at a time.
+    gaps=rollups.backfill(owner,complete,int(os.getenv('MEMORY_BACKFILL_BATCH','2') or 2))
+    if gaps['periods']:print(json.dumps({'backfill':gaps},ensure_ascii=False),flush=True)
     with store.db() as con:
         con.execute('CREATE TABLE IF NOT EXISTS memory_reports(owner_id TEXT NOT NULL,day TEXT NOT NULL,blocks TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(owner_id,day))')
         existing=con.execute('SELECT 1 FROM memory_reports WHERE owner_id=? AND day=?',(owner,today.isoformat())).fetchone()

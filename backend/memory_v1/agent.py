@@ -49,7 +49,7 @@ class ChatCompletions:
     No redirects (avoid forwarding credentials), no raw provider error logging.
     Only called when the caller explicitly constructs and invokes this adapter.
     """
-    def __init__(self, base_url, api_key, model, timeout=60):
+    def __init__(self, base_url, api_key, model, timeout=60, max_tokens=None):
         parsed = urlsplit(base_url)
         if (parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1", "::1"))) or parsed.username or parsed.password or parsed.query or parsed.fragment or not parsed.hostname:
             raise ValueError("use an HTTPS provider URL or loopback HTTP URL without embedded credentials/query")
@@ -57,6 +57,8 @@ class ChatCompletions:
             raise ValueError("model required")
         self.url = base_url.rstrip("/") + "/chat/completions"
         self.key, self.model, self.timeout = api_key, model, timeout
+        # Reasoning models spend part of this budget before writing any output.
+        self.max_tokens = max_tokens or int(os.getenv("MEMORY_LLM_MAX_TOKENS", "12000") or 12000)
 
     @classmethod
     def from_env(cls):
@@ -67,7 +69,7 @@ class ChatCompletions:
             def redirect_request(self, req, fp, code, msg, headers, newurl):
                 return None
         payload = {"model": self.model, "messages": messages, "temperature": 0,
-                   "max_tokens": 6000, "response_format": {"type": "json_object"}}
+                   "max_tokens": self.max_tokens, "response_format": {"type": "json_object"}}
         headers = {"Content-Type": "application/json"}
         if self.key:
             headers["Authorization"] = f"Bearer {self.key}"
@@ -80,7 +82,7 @@ class ChatCompletions:
             data = json.loads(body)
             choice = data["choices"][0]
             if choice.get("finish_reason") != "stop":
-                raise AgentError("provider output incomplete")
+                raise AgentError(f"provider output incomplete ({choice.get('finish_reason')}); reduce batch size")
             content = choice["message"]["content"]
             if not isinstance(content, str):
                 raise AgentError("provider returned non-text content")

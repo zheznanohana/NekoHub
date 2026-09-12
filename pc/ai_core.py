@@ -104,53 +104,15 @@ class AiManager(QObject):
         threading.Thread(target=self._process_chat, args=(user_msg, domains), daemon=True).start()
 
     def _process_chat(self, user_msg: str, domains: list):
+        """Chat runs on the memory store, not on a wall of freshly scraped context.
+
+        The old path stuffed the latest notifications, feeds, mail and wallet
+        rows into every prompt. The agent now retrieves what a question actually
+        needs, so the same data is reachable without paying for all of it each
+        turn — and without the prompt quietly changing under the user.
+        """
         try:
             s = self.settings
-            limit_gotify = getattr(s, "ai_limit_gotify", 20)
-            limit_rss = getattr(s, "ai_limit_rss", 10)
-            limit_imap = getattr(s, "ai_limit_imap", 10)
-            limit_web3 = getattr(s, "ai_limit_web3", 20)
-
-            context_texts = []
-            
-            # 1. 严格过滤后的 Gotify 原生通知
-            if "gotify" in domains:
-                try:
-                    from storage import latest_messages
-                    # 深度拉取，防止过滤掉标签后条数不足
-                    raw_msgs = latest_messages(200) 
-                    gotify_pure = []
-                    for m in raw_msgs:
-                        title = str(m[2] or "").upper()
-                        # 【核心改动：防侧漏】如果标题带了插件标签或AI前缀，不作为“通知”来源
-                        if any(tag in title for tag in ["[RSS]", "[WEB3]", "[IMAP]", "[AI任务完成]"]):
-                            continue
-                        gotify_pure.append(f"通知: {m[2]}\n内容: {m[3]}")
-                        if len(gotify_pure) >= limit_gotify:
-                            break
-                    if gotify_pure:
-                        context_texts.append("【原生通知流】\n" + "\n".join(gotify_pure))
-                except: pass
-
-            # 2. 独立 RSS (只有勾选了才进上下文)
-            if "rss" in domains and self.rss_plugin:
-                data = self.rss_plugin.fetch_data(is_bg=True)[:limit_rss]
-                if data:
-                    context_texts.append("【RSS 订阅资讯】\n" + "\n".join([f"标题: {d['title']}\n摘要: {d['summary']}" for d in data]))
-
-            # 3. 独立 邮件
-            if "imap" in domains and self.imap_plugin:
-                data = self.imap_plugin.fetch_data(is_bg=True)[:limit_imap]
-                if data:
-                    context_texts.append("【邮件动态】\n" + "\n".join([f"发件人: {d['source']}\n内容: {d['title']}" for d in data]))
-
-            # 4. 独立 Web3
-            if "web3" in domains and self.web3_plugin:
-                data = self.web3_plugin.fetch_data(is_bg=True)[:limit_web3]
-                if data:
-                    context_texts.append("【链上资金预警】\n" + "\n".join([f"账户: {d['source']}\n标题: {d['title']}\n详情: {d['summary']}" for d in data]))
-
-            full_context = "\n\n".join(context_texts)
             import os, sys
             from pathlib import Path
             root=Path(__file__).resolve().parents[1]
@@ -164,7 +126,7 @@ class AiManager(QObject):
             if profiles and 0<=index<len(profiles):
                 parts=profiles[index].split('|')
                 if len(parts)==4:provider={'base_url':parts[1],'api_key':parts[2],'model':parts[3]}
-            blocks=render_command(store,'admin',route(user_msg)) if user_msg.startswith('/') else run_pi(user_msg,store,'admin',self.view_context,provider=provider,background=full_context)
+            blocks=render_command(store,'admin',route(user_msg)) if user_msg.startswith('/') else run_pi(user_msg,store,'admin',self.view_context,provider=provider)
             self.chat_blocks_ready.emit([b for b in blocks if b['type']!='text'])
             self.chat_response_ready.emit('\n'.join(b['text'] for b in blocks if b['type']=='text') or '结构化结果已显示。写操作等待你确认。')
         except Exception as e:

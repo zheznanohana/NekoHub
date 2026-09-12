@@ -19,7 +19,7 @@ selected_ids 是用户当前选中的节点。图有原文、日、周、月和�
 自我迭代使用 agent_improve_propose 保存问题、改进和测试计划，当前不自行应用代码或修改权限。
 回答引用读到的记忆 ID 或网页 URL。最多八次工具调用。最终用简短中文说明结果。'''
 
-def run_pi(message,store,owner,context=None,provider=None,background=''):
+def run_pi(message,store,owner,context=None,provider=None):
     env=os.environ.copy()
     if provider:env.update({'MEMORY_LLM_BASE_URL':provider['base_url'],'MEMORY_LLM_API_KEY':provider['api_key'],'MEMORY_LLM_MODEL':provider['model']})
     ChatCompletions(env.get('MEMORY_LLM_BASE_URL',''),env.get('MEMORY_LLM_API_KEY',''),env.get('MEMORY_LLM_MODEL',''))
@@ -35,7 +35,7 @@ def run_pi(message,store,owner,context=None,provider=None,background=''):
             proc.stdin.write(json.dumps(value,ensure_ascii=False)+'\n');proc.stdin.flush()
         except (BrokenPipeError,OSError):raise AgentError('Pi runtime stopped before accepting input') from None
     try:
-        send({'system':SYSTEM,'tools':specs(),'input':{'message':message,'view_context':resolve(store,owner,context),'untrusted_background':background[:24000]}})
+        send({'system':SYSTEM,'tools':specs(),'input':{'message':message,'view_context':resolve(store,owner,context)}})
         while True:
             line=proc.stdout.readline(1_000_001)
             if not line or len(line)>1_000_000:raise AgentError('Pi stream stopped')

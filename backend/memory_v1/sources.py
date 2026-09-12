@@ -18,6 +18,9 @@ from .connectors import get_json, github_sync, gotify_sync
 from .store import now
 
 URL = re.compile(r"^https?://[^\s/$.?#][^\s]*$")
+# Etherscan's multichain endpoint; the chain id is the only thing that varies.
+CHAINS = {"ETH": 1, "Polygon": 137, "Arbitrum": 42161, "Base": 8453,
+          "Optimism": 10, "BSC": 56, "Linea": 59144, "Scroll": 534352}
 
 KINDS = {
     "gotify": {
@@ -38,6 +41,21 @@ KINDS = {
                    {"name": "name", "label": "显示名称", "type": "text", "optional": True}],
         "secret": None,
         "note": "公开订阅源，无需凭据。每次最多导入 50 条。",
+    },
+    "imap": {
+        "label": "邮箱（IMAP 只读）",
+        "fields": [{"name": "host", "label": "IMAP 服务器", "type": "text", "placeholder": "imap.qq.com"},
+                   {"name": "user", "label": "邮箱账号", "type": "text", "placeholder": "you@example.com"},
+                   {"name": "port", "label": "端口", "type": "text", "placeholder": "993", "optional": True}],
+        "secret": {"name": "password", "label": "密码或授权码"},
+        "note": "只读取收件箱最近若干封的发件人、主题与正文摘要。不发信，不删信，不改标记。",
+    },
+    "web3": {
+        "label": "链上地址（Etherscan 兼容）",
+        "fields": [{"name": "address", "label": "钱包地址", "type": "text", "placeholder": "0x..."},
+                   {"name": "chain", "label": "链", "type": "text", "placeholder": "ETH / Polygon / Arbitrum", "optional": True}],
+        "secret": {"name": "api_key", "label": "Etherscan API Key"},
+        "note": "只读最近交易记录。永远不发起交易，也不接受私钥。",
     },
 }
 
@@ -66,6 +84,14 @@ def check(kind, config):
             raise ValueError("地址必须是 http(s) URL")
         if field["name"] == "repo" and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value):
             raise ValueError("仓库格式应为 owner/repo")
+        if field["name"] == "address" and not re.fullmatch(r"0x[0-9a-fA-F]{40}", value):
+            raise ValueError("地址格式应为 0x 开头的 40 位十六进制")
+        if field["name"] == "host" and not re.fullmatch(r"[A-Za-z0-9.-]{3,253}", value):
+            raise ValueError("IMAP 服务器格式不正确")
+        if field["name"] == "port" and not (value.isdigit() and 1 <= int(value) <= 65535):
+            raise ValueError("端口必须是 1-65535")
+        if field["name"] == "chain" and value not in CHAINS:
+            raise ValueError("暂不支持这条链：" + ", ".join(CHAINS))
         config[field["name"]] = value
     return config
 
@@ -138,6 +164,10 @@ class Sources:
                 result = github_sync(self.store, owner, config["repo"], row["secret"], get=get)
             elif row["kind"] == "rss":
                 result = rss_sync(self.store, owner, config["url"], config.get("name", ""))
+            elif row["kind"] == "imap":
+                result = imap_sync(self.store, owner, config["host"], config["user"], row["secret"], int(config.get("port") or 993))
+            elif row["kind"] == "web3":
+                result = web3_sync(self.store, owner, config["address"], row["secret"], config.get("chain") or "ETH", get=get)
             else:
                 raise ValueError("unknown connector kind")
             summary = f"导入 {result.get('imported', 0)} 条"
@@ -180,3 +210,85 @@ def rss_sync(store, owner, url, name="", *, limit=50):
             "provenance": "external"})
         imported += not ack["duplicate"]
     return {"imported": imported, "entries": len(parsed.entries[:limit]), "feed": source}
+
+
+def imap_sync(store, owner, host, user, password, port=993, *, limit=25):
+    """Read-only inbox pull. Never sends, deletes, or changes a message flag."""
+    import email
+    import imaplib
+    from email.header import decode_header, make_header
+    mail = imaplib.IMAP4_SSL(host, port)
+    imported, uids = 0, []
+    try:
+        mail.login(user, password)
+        mail.select("INBOX", readonly=True)
+        ok, data = mail.search(None, "ALL")
+        if ok != "OK":
+            raise ValueError("IMAP search failed")
+        uids = data[0].split()[-limit:]
+        for uid in uids:
+            ok, raw = mail.fetch(uid, "(RFC822)")
+            if ok != "OK" or not raw or not isinstance(raw[0], tuple):
+                continue
+            message = email.message_from_bytes(raw[0][1])
+            subject = str(make_header(decode_header(message.get("Subject", "")))).strip()
+            sender = str(make_header(decode_header(message.get("From", "")))).strip()
+            body = ""
+            for part in message.walk():
+                if part.get_content_type() == "text/plain" and not part.get_filename():
+                    try:
+                        body = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", "replace")
+                    except (AttributeError, LookupError):
+                        body = ""
+                    break
+            parts = [p for p in (subject, ("发件人：" + sender) if sender else "", body.strip()) if p]
+            text = "\\n".join(parts) or "(empty mail)"
+            # Message-ID is stable across re-fetches; the mailbox UID is not.
+            external = (message.get("Message-ID") or (user + ":" + uid.decode()))[:160]
+            ack = store.ingest(owner, {
+                "schema_version": "1.0", "kind": "memory.ingest", "request_id": uuid.uuid4().hex,
+                "source": {"type": "imap", "instance_id": "imap:" + user + "@" + host, "external_id": external},
+                "occurred_at": None, "timezone": "UTC",
+                "content": {"title": subject[:1000], "text": text[:100000],
+                            "fields": {"from": sender[:200], "mailbox": user[:200]}},
+                "provenance": "external"})
+            imported += not ack["duplicate"]
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
+    return {"imported": imported, "entries": len(uids), "feed": user}
+
+
+def web3_sync(store, owner, address, api_key, chain="ETH", *, limit=25, get=get_json):
+    """Read-only transaction history. No key material, no signing, no sending."""
+    if chain not in CHAINS:
+        raise ValueError("unsupported chain")
+    query = urllib.parse.urlencode({"chainid": CHAINS[chain], "module": "account", "action": "txlist",
+                                    "address": address, "page": 1, "offset": limit,
+                                    "sort": "desc", "apikey": api_key})
+    data = get("https://api.etherscan.io/v2/api?" + query, {"User-Agent": "NekoHub-Memory"})
+    rows = data.get("result") if isinstance(data.get("result"), list) else []
+    if not rows and str(data.get("status")) != "1" and data.get("message") not in ("No transactions found", "OK"):
+        raise ValueError("chain query failed: " + str(data.get("message"))[:80])
+    imported = 0
+    for tx in rows:
+        value = int(tx.get("value") or 0) / 1e18
+        direction = "转出" if (tx.get("from") or "").lower() == address.lower() else "转入"
+        text = "\\n".join([
+            chain + " " + direction + " " + format(value, ".6f") + " 原生代币",
+            "from " + str(tx.get("from")),
+            "to " + str(tx.get("to")),
+            "hash " + str(tx.get("hash"))])
+        occurred = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(tx.get("timeStamp") or 0))) if tx.get("timeStamp") else None
+        ack = store.ingest(owner, {
+            "schema_version": "1.0", "kind": "memory.ingest", "request_id": uuid.uuid4().hex,
+            "source": {"type": "web3", "instance_id": "web3:" + chain + ":" + address.lower(), "external_id": (tx.get("hash") or "")[:160]},
+            "occurred_at": occurred, "timezone": "UTC",
+            "content": {"title": chain + " " + direction + " " + format(value, ".6f"), "text": text,
+                        "fields": {"chain": chain, "direction": direction, "value": value,
+                                   "hash": (tx.get("hash") or "")[:160]}},
+            "provenance": "external"})
+        imported += not ack["duplicate"]
+    return {"imported": imported, "entries": len(rows), "feed": chain + " " + address[:10]}
