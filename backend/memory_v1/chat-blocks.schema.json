@@ -1,0 +1,1712 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        }
+      },
+      "required": [
+        "event_id",
+        "start",
+        "end",
+        "quote"
+      ]
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "kind": {
+          "enum": [
+            "person",
+            "project",
+            "event",
+            "task",
+            "place",
+            "topic",
+            "preference"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "aliases"
+      ]
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "predicate": {
+          "enum": [
+            "participates_in",
+            "belongs_to",
+            "located_at",
+            "scheduled_for",
+            "has_status",
+            "prefers",
+            "related_to"
+          ]
+        },
+        "object": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "node_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                }
+              },
+              "required": [
+                "node_id"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100000
+                },
+                "datatype": {
+                  "enum": [
+                    "text",
+                    "datetime",
+                    "decimal",
+                    "boolean"
+                  ]
+                },
+                "unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "value",
+                "datatype",
+                "unit"
+              ]
+            }
+          ]
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valid_to": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "epistemic": {
+          "enum": [
+            "observed",
+            "reported",
+            "inferred"
+          ]
+        },
+        "status": {
+          "enum": [
+            "candidate",
+            "active",
+            "superseded",
+            "disputed",
+            "retracted",
+            "archived"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "id",
+        "subject_id",
+        "predicate",
+        "object",
+        "valid_from",
+        "valid_to",
+        "epistemic",
+        "status",
+        "confidence",
+        "version",
+        "evidence"
+      ]
+    },
+    "ingest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "kind": {
+          "const": "memory.ingest"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": [
+                "gotify",
+                "manual",
+                "imap",
+                "rss",
+                "web3",
+                "github",
+                "import"
+              ]
+            },
+            "instance_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "external_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            }
+          },
+          "required": [
+            "type",
+            "instance_id",
+            "external_id"
+          ]
+        },
+        "occurred_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "content": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100000
+            },
+            "fields": {
+              "type": "object",
+              "maxProperties": 40,
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "required": [
+            "title",
+            "text"
+          ]
+        },
+        "provenance": {
+          "enum": [
+            "user_authored",
+            "external",
+            "assistant_generated"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "request_id",
+        "source",
+        "occurred_at",
+        "timezone",
+        "content",
+        "provenance"
+      ]
+    },
+    "changeset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "kind": {
+          "const": "memory.changeset"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "extractor_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          },
+          "minItems": 0
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "const": "assert"
+                  },
+                  "fact": {
+                    "$ref": "#/$defs/fact"
+                  }
+                },
+                "required": [
+                  "op",
+                  "fact"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "const": "supersede"
+                  },
+                  "target_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100000
+                  },
+                  "fact": {
+                    "$ref": "#/$defs/fact"
+                  }
+                },
+                "required": [
+                  "op",
+                  "target_id",
+                  "expected_version",
+                  "reason",
+                  "fact"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "enum": [
+                      "dispute",
+                      "retract",
+                      "archive"
+                    ]
+                  },
+                  "target_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "expected_version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100000
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/evidence"
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "op",
+                  "target_id",
+                  "expected_version",
+                  "reason",
+                  "evidence"
+                ]
+              }
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "request_id",
+        "idempotency_key",
+        "extractor_version",
+        "nodes",
+        "operations"
+      ]
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "kind": {
+          "const": "memory.query"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "to": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "node_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "minItems": 0,
+              "uniqueItems": true
+            },
+            "include_candidates": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "from",
+            "to",
+            "node_ids",
+            "include_candidates"
+          ]
+        },
+        "view": {
+          "enum": [
+            "graph",
+            "table",
+            "timeline",
+            "answer"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1000
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "request_id",
+        "question",
+        "filters",
+        "view",
+        "limit",
+        "cursor"
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "kind": {
+          "const": "memory.result"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "as_of": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "graph": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "nodes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/node"
+              },
+              "minItems": 0
+            },
+            "facts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/fact"
+              },
+              "minItems": 0
+            }
+          },
+          "required": [
+            "nodes",
+            "facts"
+          ]
+        },
+        "answer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "supported",
+                "partial",
+                "insufficient_evidence"
+              ]
+            },
+            "claims": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100000
+                  },
+                  "fact_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "text",
+                  "fact_ids"
+                ]
+              },
+              "minItems": 0
+            },
+            "unknowns": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100000
+              },
+              "minItems": 0
+            }
+          },
+          "required": [
+            "status",
+            "claims",
+            "unknowns"
+          ]
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "request_id",
+        "as_of",
+        "graph",
+        "answer",
+        "next_cursor"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "kind": {
+          "const": "memory.error"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "code": {
+          "enum": [
+            "VALIDATION_ERROR",
+            "EVIDENCE_MISMATCH",
+            "VERSION_CONFLICT",
+            "NOT_FOUND",
+            "SOURCE_CONFLICT",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "request_id",
+        "code",
+        "message",
+        "retryable"
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "kind": {
+      "const": "chat.blocks"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "text"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "memory.cards"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "occurred_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "source_type": {
+                      "type": "string"
+                    },
+                    "content_hash": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "text"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "memory.network"
+              },
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "level": {
+                      "enum": [
+                        "raw",
+                        "day",
+                        "week",
+                        "month",
+                        "entity"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "period": {
+                      "type": "string"
+                    },
+                    "evidence_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "tier": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "level",
+                    "label",
+                    "text",
+                    "period",
+                    "evidence_ids"
+                  ]
+                }
+              },
+              "edges": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "compresses",
+                        "association",
+                        "evidence",
+                        "similar"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "target",
+                    "kind",
+                    "label"
+                  ]
+                }
+              },
+              "scope": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "nodes",
+              "edges",
+              "scope"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "memory.summaries"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "level": {
+                      "enum": [
+                        "day",
+                        "week",
+                        "month"
+                      ]
+                    },
+                    "period": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "event_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "child_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "level",
+                    "period",
+                    "summary",
+                    "event_ids",
+                    "child_ids"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "memory.table"
+              },
+              "columns": {
+                "const": [
+                  "id",
+                  "level",
+                  "source",
+                  "subject",
+                  "relation",
+                  "content",
+                  "period",
+                  "status",
+                  "parent_ids",
+                  "child_ids",
+                  "evidence_ids",
+                  "fields"
+                ]
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "level": {
+                      "enum": [
+                        "raw",
+                        "detail",
+                        "day",
+                        "week",
+                        "month"
+                      ]
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "relation": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "period": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "parent_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "child_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "evidence_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "fields": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "level",
+                    "source",
+                    "subject",
+                    "relation",
+                    "content",
+                    "period",
+                    "status",
+                    "parent_ids",
+                    "child_ids",
+                    "evidence_ids",
+                    "fields"
+                  ]
+                }
+              },
+              "scope": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "columns",
+              "rows",
+              "scope"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "memory.diary"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "day": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "updated_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "event_count": {
+                      "type": "integer"
+                    },
+                    "event_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "summary_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "day",
+                    "text",
+                    "version",
+                    "updated_at",
+                    "event_count",
+                    "event_ids",
+                    "sources",
+                    "summary",
+                    "summary_id"
+                  ]
+                }
+              },
+              "scope": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "rows",
+              "scope"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "memory.graph"
+              },
+              "data": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "nodes": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/node"
+                    }
+                  },
+                  "facts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/fact"
+                    }
+                  }
+                },
+                "required": [
+                  "nodes",
+                  "facts"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "data"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "memory.action"
+              },
+              "action_id": {
+                "type": "string"
+              },
+              "command": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.search"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.create"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.update"
+                      },
+                      "event_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "event_id",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.delete"
+                      },
+                      "event_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "event_id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.graph"
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.graph.read"
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.node.get"
+                      },
+                      "node_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "node_id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.node.expand"
+                      },
+                      "node_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "direction": {
+                        "enum": [
+                          "parents",
+                          "children",
+                          "both"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "node_id",
+                      "direction"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.export"
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.diary.read"
+                      },
+                      "from": {
+                        "type": "string",
+                        "maxLength": 10
+                      },
+                      "to": {
+                        "type": "string",
+                        "maxLength": 10
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "from",
+                      "to",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.diary.write"
+                      },
+                      "day": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 10
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "day",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.table.read"
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "level": {
+                        "enum": [
+                          "",
+                          "raw",
+                          "detail",
+                          "day",
+                          "week",
+                          "month"
+                        ]
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "source",
+                      "level",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.reply"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000
+                      },
+                      "evidence_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "uniqueItems": true
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "text",
+                      "evidence_ids"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.daily"
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.compress"
+                      },
+                      "level": {
+                        "enum": [
+                          "day",
+                          "week",
+                          "month"
+                        ]
+                      },
+                      "period": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "level",
+                      "period"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.recall"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.expand"
+                      },
+                      "summary_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "summary_id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "const": "memory.clarify"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "text"
+                    ]
+                  }
+                ]
+              },
+              "expires_in": {
+                "type": "integer"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "preview": {
+                "type": "string"
+              },
+              "affected_facts": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "type",
+              "action_id",
+              "command",
+              "expires_in"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "memory.receipt"
+              },
+              "data": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "state": {
+                    "type": "string"
+                  },
+                  "event_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "imported": {
+                    "type": "integer"
+                  },
+                  "duplicate": {
+                    "type": "integer"
+                  },
+                  "failed": {
+                    "type": "integer"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "day": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer"
+                  },
+                  "indexed": {
+                    "type": "integer"
+                  },
+                  "dropped": {
+                    "type": "integer"
+                  },
+                  "pending": {
+                    "type": "integer"
+                  },
+                  "embed_state": {
+                    "type": "string"
+                  },
+                  "embed_embedded": {
+                    "type": "integer"
+                  },
+                  "embed_pending": {
+                    "type": "integer"
+                  },
+                  "graded": {
+                    "type": "integer"
+                  },
+                  "changed": {
+                    "type": "integer"
+                  },
+                  "merge_suggestions": {
+                    "type": "integer"
+                  },
+                  "entries": {
+                    "type": "integer"
+                  },
+                  "feed": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "type": "string"
+                  },
+                  "history_complete": {
+                    "type": "boolean"
+                  },
+                  "next_since": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "next_page": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": []
+              }
+            },
+            "required": [
+              "type",
+              "data"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "request_id",
+    "blocks"
+  ]
+}

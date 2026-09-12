@@ -1,0 +1,9 @@
+{
+  "telegram_bots": [],
+  "discord_bots": [],
+  "onebot_enabled": false,
+  "onebot_v11_access_token": "",
+  "onebot_v11_ws_urls": [],
+  "allowed_sessions": [],
+  "cooldown_seconds": 3
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "kind": "chat.blocks",
+  "request_id": "synthetic-table-example",
+  "blocks": [
+    {
+      "type": "memory.table",
+      "columns": [
+        "id",
+        "level",
+        "source",
+        "subject",
+        "relation",
+        "content",
+        "period",
+        "status",
+        "parent_ids",
+        "child_ids",
+        "evidence_ids"
+      ],
+      "rows": [
+        {
+          "id": "a1ac2a9041514cf8a4d0c3dc820c9e01",
+          "level": "raw",
+          "source": "manual",
+          "subject": "a1ac2a9041514cf8a4d0c3dc820c9e01",
+          "relation": "original_record",
+          "content": "我计划明天下午三点整理 NekoHub 的记忆设计。",
+          "period": "2026-09-12T15:00:00+09:00",
+          "status": "recorded",
+          "parent_ids": [],
+          "child_ids": [],
+          "evidence_ids": [
+            "a1ac2a9041514cf8a4d0c3dc820c9e01"
+          ]
+        }
+      ],
+      "scope": "latest 100 raw records, up to 200 active facts and current summaries; not a full database backup"
+    }
+  ]
+}
